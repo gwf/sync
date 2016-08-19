@@ -25,21 +25,24 @@ should _not_ result in all content being re-transferred.
 Directory layout:
 
 * local client
-** .sync
-*** additions
-*** deletions
-*** moves
-*** exclussions
-*** versions
-**** 0, 1
-*** backup
-** regular content
+  * .sync
+    * additions
+    * deletions
+    * moves
+    * exclussions
+    * versions
+      * 0, 1
+    * backup
+  * regular content
 
 * local server
-** .sync
-*** versions
-**** 0, 1
-*** clients
-**** client -> ../versions/#
+  * .sync
+    * versions
+      * 0, 1
+    * clients
+      * client -> ../versions/#
+    * scripts
+      * ...
+  * regular content 
 
 
