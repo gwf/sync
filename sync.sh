@@ -10,7 +10,7 @@ DEBUG=0
 
 ################################################################################
 
-function show_help {
+function help {
     echo help
 }
 
@@ -293,7 +293,7 @@ function main {
     while true; do        
         case $1 in
             -h|-\?|--help)
-                show_help
+                help
                 exit 0
                 ;;
             -d|--debug)
