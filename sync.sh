@@ -1,10 +1,9 @@
 #!/bin/sh
 
-USER=/Users/gary
+HOME=/Users/gary
 BASE=Home
 HOST=diskstation
-
-
+LOCAL=$(hostname -s)
 
 DEBUG=0
 
@@ -17,7 +16,7 @@ function help {
 ################################################################################
 
 function rsh {
-    ssh -qn -oBatchMode=yes "$HOST" $@
+    ssh -qn -oConnectTimeout=1 -oBatchMode=yes "$HOST" $@
 }
 
 ################################################################################
@@ -44,13 +43,10 @@ function log {
 
 function sanity_checks {
     # Check that the base directory exists
-    if [ ! -d "$USER/$BASE" ]; then
-        error "Sync directory $USER/$BASE does not exist."
+    if [ ! -d "$HOME/$BASE" ]; then
+        error "sync directory $HOME/$BASE does not exist."
     fi
 
-    mkdir -p "$USER/$BASE/.sync"
-    log "performing sanity checks"    
-    
     # Check all files within $BASE are owned by the user running the script.
     WHOAMI=`whoami`
     NOTOWNED=`find $BASE -not -user $WHOAMI -print | wc -l | tr -d ' '`
@@ -62,36 +58,30 @@ function sanity_checks {
     # Check that all files within $BASE are unlocked.
     LOCKED=`find $BASE -flags uchg -print | wc -l | tr -d ' '`
     if [ "$LOCKED" != "0" ]; then
+        echo HELLO
         CMD="'find $BASE -flags uchg -exec chflags nouchg {} \;'"
         error "$LOCKED file(s) within $BASE locked" \
               "Consider running: $CMD."
     fi
 
     # Check that the remote end point is up and reachable
-    ping -c 1 "$HOST" &> /dev/null
+    ping -c 1 "$HOST" > /dev/null 2>&1
     if [ $? != 0 ]; then
-        error "Remote host $HOST is unreachable"
+        error "remote host $HOST is unreachable"
     fi
-
+    
     # Check that the user can ssh into the server
-    ssh -qn -oBatchMode=yes "$HOST" true > /dev/null 2>&1
+    rsh true > /dev/null 2>&1
     if [ $? != 0 ]; then
-        error "Unable to ssh to $HOST." \
+        error "unable to ssh to $HOST." \
               "You may need to setup public ssh keys on $HOST."
     fi
 
-    return
-    
-    # Check that the remote base directory exists.  Otherwise, create it
-    ssh -qn -oBatchMode=yes "$HOST" test -d "$BASE/.sync" > /dev/null 2>&1
+    # Check that the remote base directory exists.
+    rsh test -d "$BASE" > /dev/null 2>&1
     if [ $? != 0 ]; then
-        ssh -qn -oBatchMode=yes "$HOST" mkdir -p "$BASE/.sync" > /dev/null 2>&1;
-        if [ $? != 0 ]; then
-            error "$BASE directory does not exist on $HOST." \
-                  "Unable to 'mkdir $BASE' on $HOST."
-        fi
-        SKIP_INIT_PULL=1
-    fi    
+        error "$BASE directory does not exist on $HOST." 
+    fi
     
 }
 
@@ -101,7 +91,7 @@ function acquire_lock {
     log "acquiring lock"
 
     lock="$BASE/.sync/lock"
-    ssh -qn -oBatchMode=yes "$HOST" "test \! -f $lock && touch $lock"
+    rsh "test \! -f $lock && touch $lock"
     if [ $? != 0 ]; then
         error "Unable to acquire server lock.  Please try again later."
     fi
@@ -113,7 +103,7 @@ function release_lock {
     log "releasing lock"
 
     lock="$BASE/.sync/lock"
-    ssh -qn -oBatchMode=yes "$HOST" "rm $lock > /dev/null 2>&1"
+    rsh "rm $lock > /dev/null 2>&1"
     if [ $? != 0 ]; then
         error "Unable to release server lock.  This will cause problems later."
     fi
@@ -134,15 +124,47 @@ function rebuild_local_shadow {
 
 ################################################################################
 
+function initialize_local_sync {
+    rm -rf "$BASE/.sync"
+    mkdir -p "$BASE/.sync/versions"
+
+    log "initializing local shadow"
+    
+    rsync "$DBG" -a --delete \
+          --exclude=.sync \
+          --log-file="$BASE/.sync/log" \
+          --link-dest=../../.. \
+          "$BASE/" "$BASE/.sync/versions/0"
+}
+
+################################################################################
+
 function rebuild_remote_shadow {
     log "rebuilding remote shadow"
 
-    ssh "$HOST" "rsync $DBG -a --delete \
-      --exclude=/.shadow \
+    rsh "$HOST" "rsync $DBG -a --delete \
       --exclude=/.sync \
       --link-dest=.. \
       $BASE/ $BASE/.shadow" \
         >> "$BASE/.sync/log"
+}
+
+################################################################################
+
+function initialize_remote_sync {
+    log "initializing remote shadow"
+
+    rsh rm -rf "$BASE/.sync"
+    rsh mkdir -p "$BASE/.sync/versions"
+    rsh mkdir -p "$BASE/.sync/clients"
+    
+    rsh rsync "$DBG" -a --delete \
+        --exclude=.sync \
+        --link-dest=../../.. \
+        "$BASE/" "$BASE/.sync/versions/0" \
+        >> "$BASE/.sync/log"
+
+    rsh ln -s "$BASE/.sync/versions/0" "$BASE/.sync/clients/$LOCAL" 
 }
 
 ################################################################################
@@ -250,8 +272,6 @@ function sync_machines {
 
 function old_main {
 
-    cd $USER
-
     DBG="-q"
     if [ $DEBUG != 0 ]; then
        DBG="-ni"
@@ -268,28 +288,48 @@ function old_main {
 ################################################################################
 
 function status {
-    # Inspect the local and remote machines to see if they are in a good and
-    # consistent state.  This means that local has at least one version, X,
-    # that the remote also has version X, and that
+    # Inspect the local and remote machines to see if they are in a good state. 
 
-    if rsh test -d "$BASE/.sync/versions"; then
-        echo remote has versions
-    else
-        echo remote does not have versions
-    fi
+    rsh test -d "$BASE/.sync"
+    local remote_stat=$?
 
-    if [ -d "$BASE/.sync/versions" ]; then
-        echo local has version
-    else
-        echo remote does note have versions
-    fi
+    test -d "$BASE/.sync"
+    local local_stat=$?
     
+    rsync -aiunO --delete --exclude=.sync/ "$BASE/" "$HOST":"$BASE" > /tmp/sync.$$
+    local push_add=$(grep '^>' /tmp/sync.$$ | wc -l | tr -d ' ')
+    local push_del=$(grep '^*deleting' /tmp/sync.$$ | wc -l | tr -d ' ')
 
+    rsync -aiunO --delete --exclude=.sync/ "$HOST":"$BASE/" "$BASE"  > /tmp/sync.$$
+    local pull_add=$(grep '^>' /tmp/sync.$$ | wc -l | tr -d ' ')
+    local pull_del=$(grep '^*deleting' /tmp/sync.$$ | wc -l | tr -d ' ')
+    
+    if [ $local_stat -eq 0 ]; then
+        if [ $remote_stat -eq 0 ]; then
+            echo Local and remote syncs appear ready.
+        else
+            echo Local sync appears ready but remote is not.
+        fi        
+    else
+        if [ $remote_stat -eq 0 ]; then
+            echo Remote sync appears ready but local is not.
+        else
+            echo Neither local nor remote sync are ready.
+        fi
+    fi
+
+    echo Push would update $push_add files and delete $push_del files.
+    echo Pull would update $pull_add files and delete $pull_del files.
 }
 
 ################################################################################
 
 function main {
+    if [ ! -d "$HOME" ]; then
+        error "Home directory $HOME does not exist."
+    fi
+    cd "$HOME"
+    
     while true; do        
         case $1 in
             -h|-\?|--help)
@@ -300,9 +340,13 @@ function main {
                 DEBUG=1
                 ;;
             status)
+                sanity_checks
                 status
                 ;;
             init)
+                sanity_checks
+                initialize_local_sync
+                initialize_remote_sync
                 ;;
             push)
                 ;;
@@ -323,9 +367,6 @@ function main {
 ################################################################################
 
 main $*
-
-
-
 
 
 

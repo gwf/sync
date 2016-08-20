@@ -37,11 +37,12 @@ Directory layout:
 
 * local server
   * .sync
+    * lock
     * versions
       * 0, 1
     * clients
       * client -> ../versions/#
-    * scripts
+    * scripts?
       * ...
   * regular content 
 
