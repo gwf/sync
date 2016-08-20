@@ -3,7 +3,22 @@
 USER=/Users/gary
 BASE=Home
 HOST=diskstation
+
+
+
 DEBUG=0
+
+################################################################################
+
+function show_help {
+    echo help
+}
+
+################################################################################
+
+function rsh {
+    ssh -qn -oBatchMode=yes "$HOST" $@
+}
 
 ################################################################################
 
@@ -65,9 +80,10 @@ function sanity_checks {
               "You may need to setup public ssh keys on $HOST."
     fi
 
+    return
+    
     # Check that the remote base directory exists.  Otherwise, create it
     ssh -qn -oBatchMode=yes "$HOST" test -d "$BASE/.sync" > /dev/null 2>&1
-    SKIP_INIT_PULL=0
     if [ $? != 0 ]; then
         ssh -qn -oBatchMode=yes "$HOST" mkdir -p "$BASE/.sync" > /dev/null 2>&1;
         if [ $? != 0 ]; then
@@ -232,7 +248,8 @@ function sync_machines {
 
 ################################################################################
 
-function main {
+function old_main {
+
     cd $USER
 
     DBG="-q"
@@ -250,11 +267,62 @@ function main {
 
 ################################################################################
 
-main
+function status {
+    # Inspect the local and remote machines to see if they are in a good and
+    # consistent state.  This means that local has at least one version, X,
+    # that the remote also has version X, and that
 
+    if rsh test -d "$BASE/.sync/versions"; then
+        echo remote has versions
+    else
+        echo remote does not have versions
+    fi
 
+    if [ -d "$BASE/.sync/versions" ]; then
+        echo local has version
+    else
+        echo remote does note have versions
+    fi
+    
 
+}
 
+################################################################################
+
+function main {
+    while true; do        
+        case $1 in
+            -h|-\?|--help)
+                show_help
+                exit 0
+                ;;
+            -d|--debug)
+                DEBUG=1
+                ;;
+            status)
+                status
+                ;;
+            init)
+                ;;
+            push)
+                ;;
+            pull)
+                ;;
+            sync)
+                ;;
+            clean)
+                ;;
+            *)
+                break
+                ;;
+        esac
+        shift
+    done
+}
+
+################################################################################
+
+main $*
 
 
 
