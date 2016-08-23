@@ -5,7 +5,6 @@ BASE=Home
 HOST=diskstation
 LOCAL=$(hostname -s)
 
-DEBUG=0
 
 ################################################################################
 
@@ -33,6 +32,9 @@ function error {
 ################################################################################
 
 function log {
+    if [ ! -d "$BASE/.sync" ]; then
+        return
+    fi
     prefix=`date "+%Y/%m/%d %H:%M:%S [$$]"`
     for msg in "$@"; do
         echo "$prefix # $msg" >> "$BASE/.sync/log"
@@ -42,6 +44,8 @@ function log {
 ################################################################################
 
 function sanity_checks {
+    log "Performing sanity checks."
+
     # Check that the base directory exists
     if [ ! -d "$HOME/$BASE" ]; then
         error "sync directory $HOME/$BASE does not exist."
@@ -111,60 +115,39 @@ function release_lock {
 
 ################################################################################
 
-function rebuild_local_shadow {
-    log "rebuilding local shadow"
-
-    rsync "$DBG" -a --delete \
-          --exclude=/.shadow \
-          --exclude=/.sync \
-          --log-file="$BASE/.sync/log" \
-          --link-dest=.. \
-          "$BASE/" "$BASE/.shadow"
-}
-
-################################################################################
-
 function initialize_local_sync {
     rm -rf "$BASE/.sync"
     mkdir -p "$BASE/.sync/versions"
 
-    log "initializing local shadow"
+    log "initializing local sync..."
     
-    rsync "$DBG" -a --delete \
+    rsync -a --delete \
           --exclude=.sync \
           --log-file="$BASE/.sync/log" \
           --link-dest=../../.. \
           "$BASE/" "$BASE/.sync/versions/0"
-}
 
-################################################################################
-
-function rebuild_remote_shadow {
-    log "rebuilding remote shadow"
-
-    rsh "$HOST" "rsync $DBG -a --delete \
-      --exclude=/.sync \
-      --link-dest=.. \
-      $BASE/ $BASE/.shadow" \
-        >> "$BASE/.sync/log"
+    log "local sync initialized"
 }
 
 ################################################################################
 
 function initialize_remote_sync {
-    log "initializing remote shadow"
+    log "initializing remote sync"
 
     rsh rm -rf "$BASE/.sync"
     rsh mkdir -p "$BASE/.sync/versions"
     rsh mkdir -p "$BASE/.sync/clients"
     
-    rsh rsync "$DBG" -a --delete \
+    rsh rsync -a --delete \
         --exclude=.sync \
         --link-dest=../../.. \
         "$BASE/" "$BASE/.sync/versions/0" \
         >> "$BASE/.sync/log"
 
-    rsh ln -s "$BASE/.sync/versions/0" "$BASE/.sync/clients/$LOCAL" 
+    rsh ln -s "../versions/0" "$BASE/.sync/clients/$LOCAL" 
+
+    log "remote sync initialized"
 }
 
 ################################################################################
@@ -172,6 +155,35 @@ function initialize_remote_sync {
 function find_exclusions {
     log "finding exclusions"
 
+    local_version=$1
+    remote_version=$2
+
+    REBASE="$BASE/.sync/versions/$local_version"
+    
+    ( cd $BASE; find . -type f -not -path './.sync/*' -print ) \
+        > "$BASE/.sync/new"
+    ( cd $REBASE; find . -type f -print ) > "$BASE/.sync/old"
+
+    cat "$BASE/.sync/old" "$BASE/.sync/new" | sort -u > "$BASE/.sync/all"
+    
+    rm -f "$BASE/.sync/additions"
+    rm -f "$BASE/.sync/deletions"
+
+    cat "$BASE/.sync/all" | (
+        while read fname; do
+            if [ "$BASE/$fname" -ef "$REBASE/$fname" ]; then
+                continue
+            elif [ -f "$BASE/$fname" ]; then
+                echo "$fname" >> "$BASE/.sync/additions"
+            else
+                echo "$fname" >> "$BASE/.sync/deletions"
+            fi            
+        done
+    )
+    
+
+    return
+    
     find "$BASE" -type f -links 1 \
          -not -path "$BASE/.shadow/*"  \
          -not -path "$BASE/.sync/*" \
@@ -207,12 +219,32 @@ function find_exclusions {
 function pull_from_remote {
     log "pull from remote to local"
 
-    rsync "$DBG" -abHu \
+    rsync -abHu \
           --backup-dir="$BASE/.sync/backup" \
           --exclude-from="$BASE/.sync/exclusions" \
           --log-file="$BASE/.sync/log" \
           --delete-after \
-          "$HOST":"$BASE" .
+          "$HOST:$BASE" .
+}
+
+################################################################################
+
+function pull_remote_version {
+    local_version=$1
+    remote_version=$2
+    
+    if [ "$remote_version" -eq "$local_version" ]; then
+        log "skipping pull because local and remote versions match"
+        return
+    fi
+
+    log "pulling remote version $remote_version via local version $local_version"
+    rsync -aHO \
+          --log-file="$BASE/.sync/log" \
+          --delete-after \
+          "$HOST:$BASE/.sync/versions/$local_version" \
+          "$HOST:$BASE/.sync/versions/$remote_version" \
+          "$BASE/.sync/versions"
 }
 
 ################################################################################
@@ -235,7 +267,7 @@ function delete_locally {
 function push_from_local {
     log "push from local to remote"
 
-    rsync "$DBG" -qaHu \
+    rsync -qaHu \
           --exclude ".DS_Store" \
           --exclude "$BASE/.sync/" \
           --log-file="$BASE/.sync/log" \
@@ -254,18 +286,10 @@ function sync_machines {
     fi
     
     find_exclusions
-
-    if [ $SKIP_INIT_PULL == 0 ]; then
-        pull_from_remote
-    fi
-
-    # After pull, we need to do a sanity check to confirm that the local
-    # additions have not been clobbered by a local race condition.
-    
     delete_locally
     push_from_local
-    rebuild_local_shadow
-    rebuild_remote_shadow    
+    #rebuild_local_shadow
+    #rebuild_remote_shadow    
 }
 
 ################################################################################
@@ -296,11 +320,11 @@ function status {
     test -d "$BASE/.sync"
     local local_stat=$?
     
-    rsync -aiunO --delete --exclude=.sync/ "$BASE/" "$HOST":"$BASE" > /tmp/sync.$$
+    rsync -aiunO --delete --exclude=.sync/ "$BASE/" "$HOST:$BASE" > /tmp/sync.$$
     local push_add=$(grep '^>' /tmp/sync.$$ | wc -l | tr -d ' ')
     local push_del=$(grep '^*deleting' /tmp/sync.$$ | wc -l | tr -d ' ')
 
-    rsync -aiunO --delete --exclude=.sync/ "$HOST":"$BASE/" "$BASE"  > /tmp/sync.$$
+    rsync -aiunO --delete --exclude=.sync/ "$HOST:$BASE/" "$BASE"  > /tmp/sync.$$
     local pull_add=$(grep '^>' /tmp/sync.$$ | wc -l | tr -d ' ')
     local pull_del=$(grep '^*deleting' /tmp/sync.$$ | wc -l | tr -d ' ')
     
@@ -320,6 +344,17 @@ function status {
 
     echo Push would update $push_add files and delete $push_del files.
     echo Pull would update $pull_add files and delete $pull_del files.
+}
+
+################################################################################
+
+function do_sync {
+    #sanity_checks
+    local_version=$(ls "$BASE/.sync/versions" | sort -rn | head -1)
+    remote_version=$(rsh ls "$BASE/.sync/versions" | sort -rn | head -1)
+    pull_remote_version $local_version $remote_version
+    find_exclusions $local_version $remote_version
+
 }
 
 ################################################################################
@@ -353,6 +388,7 @@ function main {
             pull)
                 ;;
             sync)
+                do_sync
                 ;;
             clean)
                 ;;
@@ -367,6 +403,3 @@ function main {
 ################################################################################
 
 main $*
-
-
-

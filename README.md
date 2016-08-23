@@ -22,7 +22,7 @@ should _not_ result in all content being re-transferred.
 
 ## Notes
 
-Directory layout:
+### Directory layout:
 
 * local client
   * .sync
@@ -47,3 +47,40 @@ Directory layout:
   * regular content 
 
 
+### Basic Process
+
+1. Start with the invariant that most recent version on local has an
+   identical copy with the same name on the remote.  Call this version X,
+   which may or may not be the most recent version on the remote.
+
+2. If there exists a version Y > X on the remote, then the first step is to
+   pull Y from the remote to the local.  We do this by pulling both X and Y
+   simultaneously with deletes and hardlinks, making moves and renames very
+   efficient. (pull latest remote)
+
+3. Next, on local, create new version, Z, which starts equal to Y but has the
+   changes from the local applied on top of it.  Note that this cannot be a
+   normal sync operations because a normal sync would unwind many of the
+   changes that resulted in X -> Y.  Instead, we look for the following:
+
+    a. New additions on local will have a single link (and no links into X).
+    
+    b. New deletions on local will exist on X but not on local proper.  They
+    may, however, exist in subsequent versions so we have to check the actual
+    pathnames to detect a true delete.
+
+    c. It's possible for a simultaneous delete and new addition on the same
+    pathname so we need to make sure that this corner case works.
+
+    d. Moves and renames are detected by pathname differences in X and the
+    sandbox.
+
+4. Once Z is created, we should then make Z and the local sandbox identical
+   with hardlinks.  Ideally this would naver change an inode in the sandbox.
+
+5. We should now push Y and Z to the remote.
+
+6. On the remote, we can remove old unneeded versions and optionally rebuild
+   the remote sandbox (although, a remote sandbox isn't strictly needed).
+
+7. We can also clean up old local versions (keeping just the sandbox and Y).
