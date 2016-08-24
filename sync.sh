@@ -1,24 +1,24 @@
 #!/bin/sh
 
 HOME=/Users/gary
-BASE=Home
-HOST=diskstation
+BASE=test
+REMOTE=diskstation
 LOCAL=$(hostname -s)
 
 
-################################################################################
+###############################################################################
 
 function help {
-    echo help
+    echo Neeed to write help sections
 }
 
-################################################################################
+###############################################################################
 
 function rsh {
-    ssh -qn -oConnectTimeout=1 -oBatchMode=yes "$HOST" $@
+    ssh -qn -oConnectTimeout=1 -oBatchMode=yes "$REMOTE" $@
 }
 
-################################################################################
+###############################################################################
 
 function error {
     prefix="error:"
@@ -29,96 +29,70 @@ function error {
     exit 1
 }
 
-################################################################################
+###############################################################################
 
 function log {
     if [ ! -d "$BASE/.sync" ]; then
         return
     fi
-    prefix=`date "+%Y/%m/%d %H:%M:%S [$$]"`
+    local prefix=$(date "+%Y/%m/%d %H:%M:%S [$$]")
     for msg in "$@"; do
         echo "$prefix # $msg" >> "$BASE/.sync/log"
     done
 }
 
-################################################################################
+###############################################################################
 
 function sanity_checks {
     log "Performing sanity checks."
-
+    
     # Check that the base directory exists
     if [ ! -d "$HOME/$BASE" ]; then
         error "sync directory $HOME/$BASE does not exist."
     fi
 
     # Check all files within $BASE are owned by the user running the script.
-    WHOAMI=`whoami`
-    NOTOWNED=`find $BASE -not -user $WHOAMI -print | wc -l | tr -d ' '`
-    if [ "$NOTOWNED" != "0" ]; then
-        error "$NOTOWNED file(s) within $BASE not owned by $WHOAMI" \
-              "Consider running: 'sudo chown -R $WHOAMI $BASE'."
+    local whoami=$(whoami)
+    local notowned=$(find $BASE -not -user $whoami -print | wc -l | tr -d ' ')
+    if [ "$notowned" != "0" ]; then
+        error "$notowned file(s) within $BASE not owned by $whoami" \
+              "Consider running: 'sudo chown -R $whoami $BASE'."
     fi
     
     # Check that all files within $BASE are unlocked.
-    LOCKED=`find $BASE -flags uchg -print | wc -l | tr -d ' '`
-    if [ "$LOCKED" != "0" ]; then
-        echo HELLO
-        CMD="'find $BASE -flags uchg -exec chflags nouchg {} \;'"
-        error "$LOCKED file(s) within $BASE locked" \
-              "Consider running: $CMD."
+    local locked=$(find $BASE -flags uchg -print | wc -l | tr -d ' ')
+    if [ "$locked" != "0" ]; then
+        local cmd="'find $BASE -flags uchg -exec chflags nouchg {} \;'"
+        error "$locked file(s) within $BASE locked" \
+              "Consider running: $cmd."
     fi
 
     # Check that the remote end point is up and reachable
-    ping -c 1 "$HOST" > /dev/null 2>&1
+    ping -c 1 "$REMOTE" > /dev/null 2>&1
     if [ $? != 0 ]; then
-        error "remote host $HOST is unreachable"
+        error "remote host $REMOTE is unreachable"
     fi
     
     # Check that the user can ssh into the server
     rsh true > /dev/null 2>&1
     if [ $? != 0 ]; then
-        error "unable to ssh to $HOST." \
-              "You may need to setup public ssh keys on $HOST."
+        error "unable to ssh to $REMOTE." \
+              "You may need to setup public ssh keys on $REMOTE."
     fi
 
     # Check that the remote base directory exists.
     rsh test -d "$BASE" > /dev/null 2>&1
     if [ $? != 0 ]; then
-        error "$BASE directory does not exist on $HOST." 
+        error "$BASE directory does not exist on $REMOTE." 
     fi
     
 }
 
-################################################################################
-
-function acquire_lock {
-    log "acquiring lock"
-
-    lock="$BASE/.sync/lock"
-    rsh "test \! -f $lock && touch $lock"
-    if [ $? != 0 ]; then
-        error "Unable to acquire server lock.  Please try again later."
-    fi
-}
-
-################################################################################
-
-function release_lock {
-    log "releasing lock"
-
-    lock="$BASE/.sync/lock"
-    rsh "rm $lock > /dev/null 2>&1"
-    if [ $? != 0 ]; then
-        error "Unable to release server lock.  This will cause problems later."
-    fi
-}
-
-################################################################################
+###############################################################################
 
 function initialize_local_sync {
     rm -rf "$BASE/.sync"
     mkdir -p "$BASE/.sync/versions"
-
     log "initializing local sync..."
     
     rsync -a --delete \
@@ -130,11 +104,10 @@ function initialize_local_sync {
     log "local sync initialized"
 }
 
-################################################################################
+###############################################################################
 
 function initialize_remote_sync {
     log "initializing remote sync"
-
     rsh rm -rf "$BASE/.sync"
     rsh mkdir -p "$BASE/.sync/versions"
     rsh mkdir -p "$BASE/.sync/clients"
@@ -144,34 +117,56 @@ function initialize_remote_sync {
         --link-dest=../../.. \
         "$BASE/" "$BASE/.sync/versions/0" \
         >> "$BASE/.sync/log"
-
+    
     rsh ln -s "../versions/0" "$BASE/.sync/clients/$LOCAL" 
 
     log "remote sync initialized"
 }
 
-################################################################################
+###############################################################################
 
-function find_exclusions {
-    log "finding exclusions"
+function acquire_lock {
+    log "acquiring lock"
 
-    local_version=$1
-    remote_version=$2
+    local lock="$BASE/.sync/lock"
+    rsh "test \! -f $lock && touch $lock"
+    if [ $? != 0 ]; then
+        error "Unable to acquire server lock.  Please try again later."
+    fi
+}
 
-    REBASE="$BASE/.sync/versions/$local_version"
+###############################################################################
+
+function release_lock {
+    log "releasing lock"
+    
+    local lock="$BASE/.sync/lock"
+    rsh "rm $lock > /dev/null 2>&1"
+    if [ $? != 0 ]; then
+        error "Unable to release server lock.  This will cause problems later."
+    fi
+}
+
+###############################################################################
+
+function find_local_updates {
+    log "finding local updates"
+
+    local lvnum=$1
+    local rebase="$BASE/.sync/versions/$lvnum"
     
     ( cd $BASE; find . -type f -not -path './.sync/*' -print ) \
         > "$BASE/.sync/new"
-    ( cd $REBASE; find . -type f -print ) > "$BASE/.sync/old"
+    ( cd $rebase; find . -type f -print ) > "$BASE/.sync/old"
 
     cat "$BASE/.sync/old" "$BASE/.sync/new" | sort -u > "$BASE/.sync/all"
     
     rm -f "$BASE/.sync/additions"
     rm -f "$BASE/.sync/deletions"
-
+    
     cat "$BASE/.sync/all" | (
         while read fname; do
-            if [ "$BASE/$fname" -ef "$REBASE/$fname" ]; then
+            if [ "$BASE/$fname" -ef "$rebase/$fname" ]; then
                 continue
             elif [ -f "$BASE/$fname" ]; then
                 echo "$fname" >> "$BASE/.sync/additions"
@@ -181,77 +176,44 @@ function find_exclusions {
         done
     )
     
-
-    return
+    cat "$BASE/.sync/additions" "$BASE/.sync/deletions" \
+        > "$BASE/.sync/updates"
+}
     
-    find "$BASE" -type f -links 1 \
-         -not -path "$BASE/.shadow/*"  \
-         -not -path "$BASE/.sync/*" \
-         -print > "$BASE/.sync/additions"
-
-    find "$BASE"/.shadow -type f -links 1 \
-         -print > "$BASE/.sync/deletions"
-
-
-    echo '.DS_Store' > "$BASE/.sync/exclusions"
-
-    echo '/Home/.sync' >> "$BASE/.sync/exclusions"
-
-    cat "$BASE/.sync/additions" \
-        | sed 's/\(.*\)/\/\1/g' \
-              >> "$BASE/.sync/exclusions"
-
-    cat "$BASE/.sync/additions" \
-        | sed 's/^\('"$BASE"'\/\)/\/\1.shadow\//g' \
-              >> "$BASE/.sync/exclusions"
-
-    cat "$BASE/.sync/deletions" \
-        | sed 's/\(.*\)/\/\1/g' \
-              >> "$BASE/.sync/exclusions"
-
-    cat "$BASE/.sync/deletions" \
-        | sed 's/^\('"$BASE"'\/\).shadow\//\/\1/g' \
-              >> "$BASE/.sync/exclusions"
-}
-
-################################################################################
-
-function pull_from_remote {
-    log "pull from remote to local"
-
-    rsync -abHu \
-          --backup-dir="$BASE/.sync/backup" \
-          --exclude-from="$BASE/.sync/exclusions" \
-          --log-file="$BASE/.sync/log" \
-          --delete-after \
-          "$HOST:$BASE" .
-}
-
-################################################################################
+###############################################################################
 
 function pull_remote_version {
-    local_version=$1
-    remote_version=$2
+    local lvnum=$1
+    local rvnum=$2
     
-    if [ "$remote_version" -eq "$local_version" ]; then
+    if [ "$rvnum" -eq "$lvnum" ]; then
         log "skipping pull because local and remote versions match"
         return
     fi
-
-    log "pulling remote version $remote_version via local version $local_version"
+    
+    log "pulling remote version $rvnum via local version $lvnum"
     rsync -aHO \
           --log-file="$BASE/.sync/log" \
           --delete-after \
-          "$HOST:$BASE/.sync/versions/$local_version" \
-          "$HOST:$BASE/.sync/versions/$remote_version" \
+          "$REMOTE:$BASE/.sync/versions/$lvnum" \
+          "$REMOTE:$BASE/.sync/versions/$rvnum" \
           "$BASE/.sync/versions"
 }
 
-################################################################################
+###############################################################################
+
+function apply_remote_updates {
+    local lvnum=$1
+    local rvnum=$2
+    local nvnum=$3
+    
+}
+
+###############################################################################
 
 function delete_locally {
     log "deleting local files"
-
+    
     cat "$BASE/.sync/deletions" | (
         while read line; do
             log "deleting $line"
@@ -262,70 +224,55 @@ function delete_locally {
     )
 }
 
-################################################################################
+###############################################################################
 
 function push_from_local {
     log "push from local to remote"
-
+    
     rsync -qaHu \
           --exclude ".DS_Store" \
           --exclude "$BASE/.sync/" \
           --log-file="$BASE/.sync/log" \
           --delete-after \
-          "$BASE" "$HOST":.
+          "$BASE" "$REMOTE":.
 }
 
-################################################################################
+###############################################################################
 
-function sync_machines {
-    # Need to optionally rebuild shadow directory if it doesm't exist
-
-    if [ ! -d "$BASE/.shadow" ]; then
-        log "initial run"
-        rebuild_local_shadow
-    fi
-    
-    find_exclusions
-    delete_locally
-    push_from_local
-    #rebuild_local_shadow
-    #rebuild_remote_shadow    
-}
-
-################################################################################
-
-function old_main {
-
-    DBG="-q"
-    if [ $DEBUG != 0 ]; then
-       DBG="-ni"
-    fi
-       
+function sync {
     sanity_checks
     acquire_lock
-    sync_machines
+    local lvnum=$(ls "$BASE/.sync/versions" | sort -rn | head -1)
+    local rvnum=$(rsh ls "$BASE/.sync/versions" | sort -rn | head -1)
+    find_local_updates $lvnum
+    pull_remote_version $lvnum $rvnum    
+    local nvnum=$(($rvnum + 1))
+    apply_remote_updates $lvnum $rvnum  $nvnum
+    apply_local_updates $nvnum
+    push_new_remote $rvnum $nvnum
     release_lock
-
-    exit 0
 }
 
-################################################################################
+###############################################################################
 
 function status {
-    # Inspect the local and remote machines to see if they are in a good state. 
-
+    # Inspect the local and remote machines to see if they are in a good
+    # state.
+    
     rsh test -d "$BASE/.sync"
     local remote_stat=$?
 
     test -d "$BASE/.sync"
     local local_stat=$?
     
-    rsync -aiunO --delete --exclude=.sync/ "$BASE/" "$HOST:$BASE" > /tmp/sync.$$
-    local push_add=$(grep '^>' /tmp/sync.$$ | wc -l | tr -d ' ')
+    rsync -aiunO --delete --exclude=.sync/ "$BASE/" "$REMOTE:$BASE" \
+          > /tmp/sync.$$
+    local push_add=$(grep '^[<>]' /tmp/sync.$$ | wc -l | tr -d ' ')
     local push_del=$(grep '^*deleting' /tmp/sync.$$ | wc -l | tr -d ' ')
 
-    rsync -aiunO --delete --exclude=.sync/ "$HOST:$BASE/" "$BASE"  > /tmp/sync.$$
-    local pull_add=$(grep '^>' /tmp/sync.$$ | wc -l | tr -d ' ')
+    rsync -aiunO --delete --exclude=.sync/ "$REMOTE:$BASE/" "$BASE"  \
+          > /tmp/sync.$$
+    local pull_add=$(grep '^[<>]' /tmp/sync.$$ | wc -l | tr -d ' ')
     local pull_del=$(grep '^*deleting' /tmp/sync.$$ | wc -l | tr -d ' ')
     
     if [ $local_stat -eq 0 ]; then
@@ -346,18 +293,7 @@ function status {
     echo Pull would update $pull_add files and delete $pull_del files.
 }
 
-################################################################################
-
-function do_sync {
-    #sanity_checks
-    local_version=$(ls "$BASE/.sync/versions" | sort -rn | head -1)
-    remote_version=$(rsh ls "$BASE/.sync/versions" | sort -rn | head -1)
-    pull_remote_version $local_version $remote_version
-    find_exclusions $local_version $remote_version
-
-}
-
-################################################################################
+###############################################################################
 
 function main {
     if [ ! -d "$HOME" ]; then
@@ -388,7 +324,7 @@ function main {
             pull)
                 ;;
             sync)
-                do_sync
+                sync
                 ;;
             clean)
                 ;;
@@ -400,6 +336,7 @@ function main {
     done
 }
 
-################################################################################
+###############################################################################
 
 main $*
+
