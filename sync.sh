@@ -163,6 +163,9 @@ function find_local_updates {
     
     rm -f "$BASE/.sync/additions"
     rm -f "$BASE/.sync/deletions"
+    touch "$BASE/.sync/additions"
+    touch "$BASE/.sync/deletions"
+    
     
     cat "$BASE/.sync/all" | (
         while read fname; do
@@ -179,7 +182,7 @@ function find_local_updates {
     cat "$BASE/.sync/additions" "$BASE/.sync/deletions" \
         > "$BASE/.sync/updates"
 }
-    
+
 ###############################################################################
 
 function pull_remote_version {
@@ -206,35 +209,78 @@ function apply_remote_updates {
     local lvnum=$1
     local rvnum=$2
     local nvnum=$3
-    
-}
 
-###############################################################################
+    log "applying updates from version $rvnum to $nvnum"
+    if [  "$rvnum" -ne "$lvnum" ]; then
+        mv "$BASE/.sync/versions/$lvnum" "$BASE/.sync/versions/$nvnum"
+    else
+        rsync -a --delete \
+          --log-file="$BASE/.sync/log" \
+          --link-dest=../../.. \
+          "$BASE/.sync/versions/$lvnum/" \
+          "$BASE/.sync/versions/$nvnum"
+    fi
+              
 
-function delete_locally {
-    log "deleting local files"
-    
-    cat "$BASE/.sync/deletions" | (
-        while read line; do
-            log "deleting $line"
-            if [ $DEBUG != 0 ]; then
-                /bin/rm -f "$line"
-            fi
-        done
-    )
-}
-
-###############################################################################
-
-function push_from_local {
-    log "push from local to remote"
-    
-    rsync -qaHu \
-          --exclude ".DS_Store" \
-          --exclude "$BASE/.sync/" \
+    rsync -aHO \
           --log-file="$BASE/.sync/log" \
           --delete-after \
-          "$BASE" "$REMOTE":.
+          --link-dest=../../.. \
+          "$BASE/.sync/versions/$rvnum/" \
+          "$BASE/.sync/versions/$nvnum"
+}
+
+###############################################################################
+
+function apply_local_updates {
+    local nvnum=$1
+    
+    log "applying local updates to version $nvnum"
+    
+    rsync -aHO \
+          --log-file="$BASE/.sync/log" \
+          --exclude=.sync \
+          --include-from="$BASE/.sync/updates" \
+          --delete-after \
+          --link-dest=../../.. \
+          "$BASE/" \
+          "$BASE/.sync/versions/$nvnum"
+
+    log "applying local updates to version $nvnum"
+
+    rsync -a --delete \
+          --exclude=.sync \
+          --link-dest=../../.. \
+          "$BASE/.sync/versions/$nvnum/" "$BASE" \
+          >> "$BASE/.sync/log"
+}
+
+###############################################################################
+
+function push_new_remote {
+    local rvnum=$1
+    local nvnum=$2
+
+    log "pushing new remote version $nvnum via version $rvnum"
+    
+    rsync -aHO \
+          --log-file="$BASE/.sync/log" \
+          --delete-after \
+          "$BASE/.sync/versions/$rvnum" \
+          "$BASE/.sync/versions/$nvnum" \
+          "$REMOTE:$BASE/.sync/versions"
+
+    rsh rm -f "$BASE/.sync/clients/$LOCAL"
+
+    rsh ln -s "../versions/$nvnum" "$BASE/.sync/clients/$LOCAL"
+
+    rsh rsync -a --delete \
+        --exclude=.sync \
+        --link-dest=../../.. \
+        "$BASE/.sync/versions/$nvnum/" "$BASE" \
+        >> "$BASE/.sync/log"
+    
+    # Need to have remote code to garbage collect versions    
 }
 
 ###############################################################################
@@ -269,7 +315,7 @@ function status {
           > /tmp/sync.$$
     local push_add=$(grep '^[<>]' /tmp/sync.$$ | wc -l | tr -d ' ')
     local push_del=$(grep '^*deleting' /tmp/sync.$$ | wc -l | tr -d ' ')
-
+    
     rsync -aiunO --delete --exclude=.sync/ "$REMOTE:$BASE/" "$BASE"  \
           > /tmp/sync.$$
     local pull_add=$(grep '^[<>]' /tmp/sync.$$ | wc -l | tr -d ' ')
