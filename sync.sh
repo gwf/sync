@@ -220,7 +220,6 @@ function pull_remote_version {
     
     log "pulling remote version $rvnum via local version $lvnum"
     rsync -aH \
-          --log-file="$BASE/.sync/log" \
           "$REMOTE:$BASE/.sync/versions/$lvnum" \
           "$REMOTE:$BASE/.sync/versions/$rvnum" \
           "$BASE/.sync/versions"
@@ -254,7 +253,7 @@ function initialize_next_version {
     # In the future, I may want to log the line below if we did the
     # move above (but otherwise not).
     
-    rsync -aq --delete  \
+    rsync -a --delete  \
           --link-dest=../../.. \
           "$BASE/.sync/versions/$rvnum/" \
           "$BASE/.sync/versions/$nvnum"
@@ -270,7 +269,7 @@ function apply_local_updates {
     # the next version.
     
     log "applying local updates to $nvnum"    
-    rsync -aq --delete \
+    rsync -a --delete \
           --link-dest=../../.. \
           --exclude=.sync \
           --log-file="$BASE/.sync/log" \
@@ -421,3 +420,5 @@ function main {
 
 main $*
 
+# if there remote and local are the same and there are no updaes, there
+# shouldn't be an version bump.

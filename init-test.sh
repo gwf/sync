@@ -19,7 +19,7 @@ cd sync
 sh test-data.sh
 mv test ..
 cd ..
-rsync -av test $REMOTE:.
+rsync -a --delete test $REMOTE:.
 
 
 
