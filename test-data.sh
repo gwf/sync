@@ -1,6 +1,9 @@
 #!/bin/sh
 
 
+HOME=/Users/gary
+BASE=test
+
 BASE=test
 DIRDEPTH=5
 NUMFILES=1024
@@ -40,7 +43,7 @@ function random_path {
 
 ###############################################################################
 
-function main {
+function make_data {    
     tmp="$BASE/tmp"
     for i in `eval echo {1..$NUMFILES}`; do
         path=`random_path $DIRDEPTH`
@@ -56,6 +59,20 @@ function main {
 
 ###############################################################################
 
-rm -rf "$BASE"
-mkdir "$BASE"
+function main {
+    cd $HOME
+    rm -rf "$BASE"
+    mkdir  "$BASE"
+    ssh diskstation rm -rf "$BASE"
+    ssh maxi rm -rf "$BASE"
+
+    make_data
+    rsync -a --delete "$BASE" diskstation:.
+    sh sync/sync.sh init
+    rsync -aH "$BASE" maxi:.
+    ssh diskstation ln -s "../versions/0" "$BASE/.sync/clients/Maxi"        
+}
+
+###############################################################################
+
 main

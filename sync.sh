@@ -160,20 +160,20 @@ function find_local_updates {
     # List all file names in the local snapshot.  This will help
     # us identify additions and deletions relative to the last sync.
     ( cd $BASE; find . -type f -not -path './.sync/*' -print ) \
+        | sed 's/^\.\///g' \
         > "$BASE/.sync/new"
 
     # List all file names from the last local version that was
     # synced to the remote.
-    ( cd $rebase; find . -type f -print ) > "$BASE/.sync/old"
+    ( cd $rebase; find . -type f -print ) \
+        | sed 's/^\.\///g' \
+        > "$BASE/.sync/old"
 
-    # Combine the two lists, sort, and strup out duplicates.
+    # Combine the two lists, sort, and strip out duplicates.
     cat "$BASE/.sync/old" "$BASE/.sync/new" | sort -u > "$BASE/.sync/all"
     
-    rm -f "$BASE/.sync/additions"
-    rm -f "$BASE/.sync/deletions"
-    touch "$BASE/.sync/additions"
-    touch "$BASE/.sync/deletions"
-    
+    rm -f "$BASE/.sync/additions"; touch "$BASE/.sync/additions"
+    rm -f "$BASE/.sync/deletions"; touch "$BASE/.sync/deletions"    
     
     cat "$BASE/.sync/all" | (
         while read fname; do
@@ -195,6 +195,9 @@ function find_local_updates {
         done
     )
 
+    
+
+    
     # Combine all additions and deletions into a single list of files
     # that were updated locally.  Note that his will not capture content
     # changes to a file.
@@ -270,6 +273,7 @@ function apply_local_updates {
     
     log "applying local updates to $nvnum"    
     rsync -a --delete \
+          --include-from="$BASE/.sync/updates" \
           --link-dest=../../.. \
           --exclude=.sync \
           --log-file="$BASE/.sync/log" \
@@ -325,10 +329,14 @@ function sync {
     local lvnum=$(ls "$BASE/.sync/versions" | sort -rn | head -1)
     local rvnum=$(rsh ls "$BASE/.sync/versions" | sort -rn | head -1)
     find_local_updates $lvnum
+    read -p "HIT RETURN> "
     pull_remote_version $lvnum $rvnum    
     local nvnum=$(($rvnum + 1))
+    read -p "HIT RETURN> "
     initialize_next_version $lvnum $rvnum  $nvnum
+    read -p "HIT RETURN> "
     apply_local_updates $nvnum
+    read -p "HIT RETURN> "
     push_new_remote $rvnum $nvnum
     release_lock
 }
