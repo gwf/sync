@@ -251,8 +251,7 @@ function pull_remote_version {
     
     log "pulling remote version $rvnum via local version $lvnum"
     rsync -aH \
-          "$REMOTE:$BASE/.sync/versions/$lvnum" \
-          "$REMOTE:$BASE/.sync/versions/$rvnum" \
+          "$REMOTE:$BASE/.sync/versions/{$lvnum,$rvnum}" \
           "$BASE/.sync/versions"
 }
 
