@@ -20,6 +20,12 @@ function rsh {
 
 ###############################################################################
 
+function enter {
+    read -p "<ENTER> "
+}
+
+###############################################################################
+
 function error {
     prefix="error:"
     for msg in "$@"; do
@@ -91,6 +97,10 @@ function sanity_checks {
 ###############################################################################
 
 function initialize_local_sync {
+
+    # TO DO: make this work relative to the state of the remote, thus allowing
+    # for new locals to be incrementally added.
+    
     rm -rf "$BASE/.sync"
     mkdir -p "$BASE/.sync/versions"
     log "initializing local sync"
@@ -107,6 +117,7 @@ function initialize_local_sync {
 ###############################################################################
 
 function initialize_remote_sync {
+    
     log "initializing remote sync"
     rsh rm -rf "$BASE/.sync"
     rsh mkdir -p "$BASE/.sync/versions"
@@ -150,23 +161,37 @@ function release_lock {
 
 ###############################################################################
 
+function list_ancestors {
+    while read path; do
+        local dirpath=$(dirname "$path")
+        while [ "$dirpath" != "$path" ]; do
+            echo $dirpath
+            path="$dirpath"
+            dirpath=$(dirname "$path")
+        done     
+    done
+}
+
+###############################################################################
+
 function find_local_updates {
     log "finding local updates"
 
     local lvnum=$1
-    local rebase="$BASE/.sync/versions/$lvnum"
+    local prev="$BASE/.sync/versions/$lvnum"
 
-
-    # List all file names in the local snapshot.  This will help
-    # us identify additions and deletions relative to the last sync.
+    # List all file names in the local snapshot.  This will help us identify
+    # additions relative to the last sync.  We don't need to note directories
+    # because they will implicitly be included by the files they contain.    
     ( cd $BASE; find . -type f -not -path './.sync/*' -print ) \
-        | sed 's/^\.\///g' \
+        | sed 's/^\.//g' \
         > "$BASE/.sync/new"
 
-    # List all file names from the last local version that was
-    # synced to the remote.
-    ( cd $rebase; find . -type f -print ) \
-        | sed 's/^\.\///g' \
+    # List all file names from the last local version that was synced to the
+    # remote.  This will help us find deletions.  We include non-files so that
+    # we can test for their removal as well.
+    ( cd $prev; find . -true -print ) \
+        | sed 's/^\.//g' \
         > "$BASE/.sync/old"
 
     # Combine the two lists, sort, and strip out duplicates.
@@ -174,35 +199,38 @@ function find_local_updates {
     
     rm -f "$BASE/.sync/additions"; touch "$BASE/.sync/additions"
     rm -f "$BASE/.sync/deletions"; touch "$BASE/.sync/deletions"    
+    rm -f "$BASE/.sync/deldirs"; touch "$BASE/.sync/deldirs"    
     
     cat "$BASE/.sync/all" | (
         while read fname; do
-            if [ "$BASE/$fname" -ef "$rebase/$fname" ]; then
-                # Skip any named file in which the two versions
-                # are actually hardlinks to the same file.
+            if [ -d "$prev/$fname" ]; then
+                # This is a directory found in the previous sync ...
+                if [ \! -d "$BASE/$fname" ]; then
+                    # ... that appears to be deleted because it was is not in
+                    # the local snapshot.
+                    echo "$fname" >> "$BASE/.sync/deldirs"
+                fi
+                continue
+            elif [ "$BASE/$fname" -ef "$prev/$fname" ]; then
+                # Skip any named file in which the two versions are hardlinks
+                # to the same file.
                 continue
             elif [ -f "$BASE/$fname" ]; then
-                # If the file exists in the snapshot, but it is no longer
-                # identical to its counterpart in the last synced version,
-                # then this file should be treated as a new addition.
+                # The file exists in the snapshot, but is different from the
+                # last synced version, so it's a new addition.
                 echo "$fname" >> "$BASE/.sync/additions"
             else
-                # If the file only exists in the last synced version (and
-                # is, therefore, not in the snapshot), then this file
-                # was deleted.
+                # The file exists in the last synced version but is not in the
+                # snapshot, so it was deleted.
                 echo "$fname" >> "$BASE/.sync/deletions"
             fi            
         done
     )
 
+    cp "$BASE/.sync/additions" "$BASE/.sync/inclusions"
+    cat "$BASE/.sync/additions" | list_ancestors | sort -u \
+         >> "$BASE/.sync/inclusions"
     
-
-    
-    # Combine all additions and deletions into a single list of files
-    # that were updated locally.  Note that his will not capture content
-    # changes to a file.
-    cat "$BASE/.sync/additions" "$BASE/.sync/deletions" \
-        > "$BASE/.sync/updates"
 }
 
 ###############################################################################
@@ -230,7 +258,7 @@ function pull_remote_version {
 
 ###############################################################################
 
-function initialize_next_version {
+function apply_remote_updates {
     local lvnum=$1
     local rvnum=$2
     local nvnum=$3
@@ -271,20 +299,38 @@ function apply_local_updates {
     # reconciled, we now need to apply the local snapshot updates to
     # the next version.
     
-    log "applying local updates to $nvnum"    
-    rsync -a --delete \
-          --include-from="$BASE/.sync/updates" \
-          --link-dest=../../.. \
+    log "applying local additions to $nvnum"    
+    rsync -a \
           --exclude=.sync \
+          --include-from="$BASE/.sync/inclusions" \
+          --filter='-! */' \
+          --exclude='*/' \
+          --link-dest='../../..' \
           --log-file="$BASE/.sync/log" \
           "$BASE/" \
           "$BASE/.sync/versions/$nvnum"
+    
+    log "applying local deletions to $nvnum"    
+    cat "$BASE/.sync/deletions" | (
+        cd "$BASE/.sync/versions/$nvnum"
+        while read line; do
+            log "deleting ./$line"
+            /bin/rm -f "./$line"
+        done
+    )
 
-    log "Merging next version $nvnum into local snapshot"
-
+    cat "$BASE/.sync/deldirs" | (
+        cd "$BASE/.sync/versions/$nvnum"
+        while read line; do
+            log "deleting directory ./$line"
+            /bin/rm -rf "./$line"
+        done
+    )
+    
     # This next rsync will then make the local snapshot match the
     # next version.
     
+    log "Merging next version $nvnum into local snapshot"
     rsync -aq --delete \
           --exclude=.sync \
           --link-dest=../../.. \
@@ -325,18 +371,18 @@ function push_new_remote {
 
 function sync {
     sanity_checks
-    acquire_lock
     local lvnum=$(ls "$BASE/.sync/versions" | sort -rn | head -1)
     local rvnum=$(rsh ls "$BASE/.sync/versions" | sort -rn | head -1)
     find_local_updates $lvnum
-    read -p "HIT RETURN> "
+    enter
+    acquire_lock
     pull_remote_version $lvnum $rvnum    
     local nvnum=$(($rvnum + 1))
-    read -p "HIT RETURN> "
-    initialize_next_version $lvnum $rvnum  $nvnum
-    read -p "HIT RETURN> "
+    enter
+    apply_remote_updates $lvnum $rvnum  $nvnum
+    enter
     apply_local_updates $nvnum
-    read -p "HIT RETURN> "
+    enter
     push_new_remote $rvnum $nvnum
     release_lock
 }
