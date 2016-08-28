@@ -84,3 +84,14 @@ should _not_ result in all content being re-transferred.
    the remote sandbox (although, a remote sandbox isn't strictly needed).
 
 7. We can also clean up old local versions (keeping just the sandbox and Y).
+
+
+## Debug Notes
+
+21205030      Aug 28 15:25 ./.sync/versions/0/1/0/0/3/6df09...
+21205030      Aug 28 15:25 ./.sync/versions/1/123/0/0/3/6df09...
+21212409      Aug 28 15:25 ./.sync/versions/2/123/0/0/3/6df09...
+21214009      Aug 28 15:25 ./123/0/0/3/6df09c6bd58cd96181db732d1e32006b
+
+
+
