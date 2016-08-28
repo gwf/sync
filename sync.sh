@@ -270,7 +270,7 @@ function apply_remote_updates {
         # more recent local version, so it's okay to rename the last
         # local version to the next version.        
         log "moving version $lvnum to $nvnum"
-        mv "$BASE/.sync/versions/$lvnum" "$BASE/.sync/versions/$nvnum"
+        #mv "$BASE/.sync/versions/$lvnum" "$BASE/.sync/versions/$nvnum"
     fi
 
     # We still need to apply the last remote version's updates
@@ -287,6 +287,7 @@ function apply_remote_updates {
     
     rsync -a --delete  \
           --link-dest=../../.. \
+          --link-dest="../$rvnum" \
           "$BASE/.sync/versions/$rvnum/" \
           "$BASE/.sync/versions/$nvnum"
 }
@@ -468,6 +469,7 @@ function main {
 
 ###############################################################################
 
+#cd $HOME; find_local_updates $(ls "$BASE/.sync/versions" | sort -rn | head -1)
 main $*
 
 # if there remote and local are the same and there are no updaes, there
