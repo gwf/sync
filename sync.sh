@@ -10,18 +10,13 @@ LOCAL=$(hostname -s)
 
 function help {
     echo Neeed to write help sections
+    exit 0
 }
 
 ###############################################################################
 
 function rsh {
     ssh -qn -oConnectTimeout=1 -oBatchMode=yes "$REMOTE" $@
-}
-
-###############################################################################
-
-function enter {
-    read -p "<ENTER> "
 }
 
 ###############################################################################
@@ -97,7 +92,6 @@ function sanity_checks {
 ###############################################################################
 
 function initialize_local_sync {
-
     # TO DO: make this work relative to the state of the remote, thus allowing
     # for new locals to be incrementally added.
     
@@ -116,8 +110,7 @@ function initialize_local_sync {
 
 ###############################################################################
 
-function initialize_remote_sync {
-    
+function initialize_remote_sync {    
     log "initializing remote sync"
     rsh rm -rf "$BASE/.sync"
     rsh mkdir -p "$BASE/.sync/versions"
@@ -138,7 +131,6 @@ function initialize_remote_sync {
 
 function acquire_lock {
     log "acquiring lock"
-
     local lock="$BASE/.sync/lock"
     rsh "test \! -f $lock && touch $lock"
     if [ $? != 0 ]; then
@@ -150,7 +142,6 @@ function acquire_lock {
 
 function release_lock {
     log "releasing lock"
-    
     local lock="$BASE/.sync/lock"
     rsh "rm $lock > /dev/null 2>&1"
     if [ $? != 0 ]; then
@@ -176,7 +167,6 @@ function list_ancestors {
 
 function find_local_updates {
     log "finding local updates"
-
     local lvnum=$1
     local prev="$BASE/.sync/versions/$lvnum"
 
@@ -199,8 +189,10 @@ function find_local_updates {
     
     rm -f "$BASE/.sync/additions"; touch "$BASE/.sync/additions"
     rm -f "$BASE/.sync/deletions"; touch "$BASE/.sync/deletions"    
-    rm -f "$BASE/.sync/deldirs"; touch "$BASE/.sync/deldirs"    
-    
+    rm -f "$BASE/.sync/dirs"; touch "$BASE/.sync/dirs"    
+
+    # Iterate over all names, and use differences between the previous version
+    # and the local snapshot as a way of identifying individual updates.
     cat "$BASE/.sync/all" | (
         while read fname; do
             if [ -d "$prev/$fname" ]; then
@@ -208,7 +200,7 @@ function find_local_updates {
                 if [ \! -d "$BASE/$fname" ]; then
                     # ... that appears to be deleted because it was is not in
                     # the local snapshot.
-                    echo "$fname" >> "$BASE/.sync/deldirs"
+                    echo "$fname" >> "$BASE/.sync/dirs"
                 fi
                 continue
             elif [ "$BASE/$fname" -ef "$prev/$fname" ]; then
@@ -227,10 +219,20 @@ function find_local_updates {
         done
     )
 
+    # The parent directories of all files added must also be in the
+    # inclussions list, otherwise, rsync will ignore the children.
     cp "$BASE/.sync/additions" "$BASE/.sync/inclusions"
     cat "$BASE/.sync/additions" | list_ancestors | sort -u \
-         >> "$BASE/.sync/inclusions"
-    
+      >> "$BASE/.sync/inclusions"
+
+    # Reorder the directory list from longest name to shortest name, which
+    # gaurantees that will consider all children before their parents.
+    cat "$BASE/.sync/dirs" \
+        | awk '{ print length($0), $0 }' \
+        | sort -rn \
+        | sed 's/^[0-9]* //g' \
+        > "$BASE/.sync/dirs.tmp"
+    mv "$BASE/.sync/dirs.tmp" "$BASE/.sync/dirs"
 }
 
 ###############################################################################
@@ -295,8 +297,8 @@ function apply_local_updates {
     local nvnum=$1
 
     # Now that the next version has the last local and remote syncs
-    # reconciled, we now need to apply the local snapshot updates to
-    # the next version.
+    # reconciled, we now need to apply the local snapshot updates to the next
+    # version.
     
     log "applying local additions to $nvnum"    
     rsync -a \
@@ -309,7 +311,7 @@ function apply_local_updates {
           "$BASE/" \
           "$BASE/.sync/versions/$nvnum"
     
-    log "applying local deletions to $nvnum"    
+    log "applying local file deletions to $nvnum"    
     cat "$BASE/.sync/deletions" | (
         cd "$BASE/.sync/versions/$nvnum"
         while read line; do
@@ -318,17 +320,19 @@ function apply_local_updates {
         done
     )
 
-    cat "$BASE/.sync/deldirs" | (
+    log "applying local directory deletions to $nvnum"    
+    cat "$BASE/.sync/dirs" | (
         cd "$BASE/.sync/versions/$nvnum"
-        while read line; do
-            log "deleting directory ./$line"
-            /bin/rm -rf "./$line"
+        while read dir; do
+            if [ $(find . -maxdepth 1 -print | wc -l) -gt 1 ]; then
+                log "deleting directory ./$dir"
+                /bin/rmdir "./$dir"
+            fi
         done
     )
     
-    # This next rsync will then make the local snapshot match the
-    # next version.
-    
+    # This next rsync will then make the local snapshot match the next
+    # version.
     log "Merging next version $nvnum into local snapshot"
     rsync -aq --delete \
           --exclude=.sync \
@@ -373,15 +377,12 @@ function sync {
     local lvnum=$(ls "$BASE/.sync/versions" | sort -rn | head -1)
     local rvnum=$(rsh ls "$BASE/.sync/versions" | sort -rn | head -1)
     find_local_updates $lvnum
-    enter
+
     acquire_lock
     pull_remote_version $lvnum $rvnum    
     local nvnum=$(($rvnum + 1))
-    enter
     apply_remote_updates $lvnum $rvnum  $nvnum
-    enter
     apply_local_updates $nvnum
-    enter
     push_new_remote $rvnum $nvnum
     release_lock
 }
@@ -438,10 +439,6 @@ function main {
         case $1 in
             -h|-\?|--help)
                 help
-                exit 0
-                ;;
-            -d|--debug)
-                DEBUG=1
                 ;;
             status)
                 sanity_checks
