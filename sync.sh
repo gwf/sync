@@ -233,6 +233,14 @@ function find_local_updates {
         | sed 's/^[0-9]* //g' \
         > "$BASE/.sync/dirs.tmp"
     mv "$BASE/.sync/dirs.tmp" "$BASE/.sync/dirs"
+
+    # Return a result to indicate if there are any changes
+    
+    test  -s "$BASE/.sync/additions" -o \
+          -s "$BASE/.sync/deletions" -o \
+          -s "$BASE/.sync/dirs"
+
+    return $?
 }
 
 ###############################################################################
@@ -240,11 +248,6 @@ function find_local_updates {
 function pull_remote_version {
     local lvnum=$1
     local rvnum=$2
-    
-    if [ "$rvnum" -eq "$lvnum" ]; then
-        log "skipping pull because versions match"
-        return
-    fi
 
     # If versions $lvnum and $rvnum on the remote server have hardlinks
     # on the files that they have in common, then pulling over both
@@ -270,7 +273,7 @@ function apply_remote_updates {
         # more recent local version, so it's okay to rename the last
         # local version to the next version.        
         log "moving version $lvnum to $nvnum"
-        #mv "$BASE/.sync/versions/$lvnum" "$BASE/.sync/versions/$nvnum"
+        mv "$BASE/.sync/versions/$lvnum" "$BASE/.sync/versions/$nvnum"
     fi
 
     # We still need to apply the last remote version's updates
@@ -331,10 +334,14 @@ function apply_local_updates {
             fi
         done
     )
+}
+
+###############################################################################
+
+function update_local_snapshot {
+    local nvnum=$1
     
-    # This next rsync will then make the local snapshot match the next
-    # version.
-    log "Merging next version $nvnum into local snapshot"
+    log "updating local snapshot via version $nvnum"
     rsync -aq --delete \
           --exclude=.sync \
           --link-dest=".sync/versions/$nvnum" \
@@ -360,7 +367,7 @@ function push_new_remote {
 
     rsh ln -s "../versions/$nvnum" "$BASE/.sync/clients/$LOCAL"
 
-    log "Merging next version $nvnum into remote snapshot"
+    log "updating remote snapshot via version $nvnum"
     
     rsh rsync -a --delete \
         --exclude=.sync \
@@ -374,18 +381,37 @@ function push_new_remote {
 ###############################################################################
 
 function sync {
+    log "--------------------------------------------------"
+    
     sanity_checks
     local lvnum=$(ls "$BASE/.sync/versions" | sort -rn | head -1)
-    local rvnum=$(rsh ls "$BASE/.sync/versions" | sort -rn | head -1)
+    local rvnum=$(rsh ls "$BASE/.sync/versions" | sort -rn | head -1)    
+    local nvnum=$rvnum
     find_local_updates $lvnum
+    local local_changes=$?
+    
+    if [ "$local_changes" -eq 0 -o "$lvnum" -ne "$rvnum" ]; then
+        acquire_lock
 
-    acquire_lock
-    pull_remote_version $lvnum $rvnum    
-    local nvnum=$(($rvnum + 1))
-    apply_remote_updates $lvnum $rvnum  $nvnum
-    apply_local_updates $nvnum
-    push_new_remote $rvnum $nvnum
-    release_lock
+        if [ "$lvnum" -ne "$rvnum" ]; then
+            pull_remote_version $lvnum $rvnum
+        else
+            log "skipping pull because versions match"            
+        fi
+
+        if [ "$local_changes" -eq 0 ]; then
+            # Bump version number
+            nvnum=$(($rvnum + 1))    
+            apply_remote_updates $lvnum $rvnum  $nvnum
+            apply_local_updates $nvnum
+            push_new_remote $rvnum $nvnum
+        fi
+
+        update_local_snapshot $nvnum        
+        release_lock
+    else
+        log "no changes on either side."
+    fi
 }
 
 ###############################################################################

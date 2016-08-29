@@ -88,5 +88,13 @@ should _not_ result in all content being re-transferred.
 
 ## Debug Notes
 
+21255950        versions/0/1/1/e322833b4f7cb009931a62e08e3e7e0f
+21255950        test/1/1/e322833b4f7cb009931a62e08e3e7e0f
+
+21255950        versions/0/1/1/e322833b4f7cb009931a62e08e3e7e0f
+21255950        versions/1/123/1/e322833b4f7cb009931a62e08e3e7e0f
+21255950        versions/2/123/1/e322833b4f7cb009931a62e08e3e7e0f
+21255950        test/123/1/e322833b4f7cb009931a62e08e3e7e0f
+
 
 
