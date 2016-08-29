@@ -380,6 +380,16 @@ function push_new_remote {
 
 ###############################################################################
 
+function clean_up_locally {
+    local nvnum=$1
+
+    log "cleaning up locally"
+    find "$BASE/.sync/versions" -depth 1 -not -name "$nvnum" -exec \
+         /bin/rm -rf '{}' \;
+}
+
+###############################################################################
+
 function sync {
     log "--------------------------------------------------"
     
@@ -408,6 +418,7 @@ function sync {
         fi
 
         update_local_snapshot $nvnum        
+        clean_up_locally $nvnum
         release_lock
     else
         log "no changes on either side."
