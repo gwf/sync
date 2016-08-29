@@ -330,7 +330,7 @@ function apply_local_updates {
         while read dir; do
             if [ $(find . -maxdepth 1 -print | wc -l) -gt 1 ]; then
                 log "deleting directory ./$dir"
-                /bin/rmdir "./$dir"
+                /bin/rmdir ".$dir"
             fi
         done
     )
@@ -384,8 +384,9 @@ function clean_up_locally {
     local nvnum=$1
 
     log "cleaning up locally"
-    find "$BASE/.sync/versions" -depth 1 -not -name "$nvnum" -exec \
-         /bin/rm -rf '{}' \;
+    find "$BASE/.sync/versions" \
+         -type d -depth 1 -not -name "$nvnum" -print \
+         | xargs rm -rf
 }
 
 ###############################################################################
