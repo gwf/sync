@@ -88,10 +88,5 @@ should _not_ result in all content being re-transferred.
 
 ## Debug Notes
 
-21205030      Aug 28 15:25 ./.sync/versions/0/1/0/0/3/6df09...
-21205030      Aug 28 15:25 ./.sync/versions/1/123/0/0/3/6df09...
-21212409      Aug 28 15:25 ./.sync/versions/2/123/0/0/3/6df09...
-21214009      Aug 28 15:25 ./123/0/0/3/6df09c6bd58cd96181db732d1e32006b
-
 
 

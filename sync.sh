@@ -337,7 +337,7 @@ function apply_local_updates {
     log "Merging next version $nvnum into local snapshot"
     rsync -aq --delete \
           --exclude=.sync \
-          --link-dest=../../.. \
+          --link-dest=".sync/versions/$nvnum" \
           "$BASE/.sync/versions/$nvnum/" "$BASE" \
           >> "$BASE/.sync/log"
 }
@@ -364,7 +364,7 @@ function push_new_remote {
     
     rsh rsync -a --delete \
         --exclude=.sync \
-        --link-dest=../../.. \
+        --link-dest=".sync/versions/$nvnum" \
         "$BASE/.sync/versions/$nvnum/" "$BASE" \
         >> "$BASE/.sync/log"
     
