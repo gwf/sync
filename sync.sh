@@ -363,8 +363,8 @@ function push_new_remote {
           "$BASE/.sync/versions/$nvnum" \
           "$REMOTE:$BASE/.sync/versions"
 
+    # TO DO: this needs to be done even when there's nothing to push
     rsh rm -f "$BASE/.sync/clients/$LOCAL"
-
     rsh ln -s "../versions/$nvnum" "$BASE/.sync/clients/$LOCAL"
 
     log "updating remote snapshot via version $nvnum"
@@ -488,14 +488,8 @@ function main {
                 initialize_local_sync
                 initialize_remote_sync
                 ;;
-            push)
-                ;;
-            pull)
-                ;;
             sync)
                 sync
-                ;;
-            clean)
                 ;;
             *)
                 break
@@ -507,8 +501,5 @@ function main {
 
 ###############################################################################
 
-#cd $HOME; find_local_updates $(ls "$BASE/.sync/versions" | sort -rn | head -1)
 main $*
 
-# if there remote and local are the same and there are no updaes, there
-# shouldn't be an version bump.
