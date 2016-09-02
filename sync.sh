@@ -254,10 +254,14 @@ function pull_remote_version {
     # versions simultaneously (and with the -H flag) will insure that
     # moves and renames will be handled efficiently.
     
-    log "pulling remote version $rvnum via local version $lvnum"
-    rsync -aH \
-          "$REMOTE:$BASE/.sync/versions/{$lvnum,$rvnum}" \
-          "$BASE/.sync/versions"
+    if [ "$lvnum" -ne "$rvnum" ]; then
+        log "pulling remote version $rvnum via local version $lvnum"
+        rsync -aH \
+              "$REMOTE:$BASE/.sync/versions/{$lvnum,$rvnum}" \
+              "$BASE/.sync/versions"
+    else
+        log "skipping pull because versions match"            
+    fi    
 }
 
 ###############################################################################
@@ -356,33 +360,42 @@ function push_new_remote {
     local nvnum=$2
 
     log "pushing new remote version $nvnum via version $rvnum"
-    
     rsync -aH \
           --delete-after \
           "$BASE/.sync/versions/$rvnum" \
           "$BASE/.sync/versions/$nvnum" \
           "$REMOTE:$BASE/.sync/versions"
 
-    # TO DO: this needs to be done even when there's nothing to push
-    rsh rm -f "$BASE/.sync/clients/$LOCAL"
-    rsh ln -s "../versions/$nvnum" "$BASE/.sync/clients/$LOCAL"
-
-    log "updating remote snapshot via version $nvnum"
-    
+    log "updating remote snapshot via version $nvnum"    
     rsh rsync -a --delete \
         --exclude=.sync \
         --link-dest=".sync/versions/$nvnum" \
         "$BASE/.sync/versions/$nvnum/" "$BASE" \
         >> "$BASE/.sync/log"
-    
-    # TO DO: have remote code to garbage collect versions    
 }
 
 ###############################################################################
 
-function clean_up_locally {
+function cleanup_remote {
     local nvnum=$1
+    log "cleaning up remote"
 
+    ssh -q -oConnectTimeout=1  "$REMOTE" <<EOF
+cd "$BASE/.sync"
+rm -f "clients/$LOCAL"
+ln -s "../versions/$nvnum" "clients/$LOCAL"
+used=\$(find clients -type l -exec readlink '{}' \; | xargs -n 1 basename)
+filter='(^'\$(echo \$used | tr ' ' '|')'$)'
+unused=\$(ls versions | egrep -v "\$filter" | sort -n)
+cd versions
+rm -rf \$unused
+EOF
+}
+
+###############################################################################
+
+function cleanup_local {
+    local nvnum=$1
     log "cleaning up locally"
     find "$BASE/.sync/versions" \
          -type d -depth 1 -not -name "$nvnum" -print \
@@ -403,13 +416,7 @@ function sync {
     
     if [ "$local_changes" -eq 0 -o "$lvnum" -ne "$rvnum" ]; then
         acquire_lock
-
-        if [ "$lvnum" -ne "$rvnum" ]; then
-            pull_remote_version $lvnum $rvnum
-        else
-            log "skipping pull because versions match"            
-        fi
-
+        pull_remote_version $lvnum $rvnum
         if [ "$local_changes" -eq 0 ]; then
             # Bump version number
             nvnum=$(($rvnum + 1))    
@@ -417,9 +424,9 @@ function sync {
             apply_local_updates $nvnum
             push_new_remote $rvnum $nvnum
         fi
-
+        cleanup_remote $nvnum
         update_local_snapshot $nvnum        
-        clean_up_locally $nvnum
+        cleanup_local $nvnum
         release_lock
     else
         log "no changes on either side."
