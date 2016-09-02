@@ -396,7 +396,7 @@ EOF
 
 function cleanup_local {
     local nvnum=$1
-    log "cleaning up locally"
+    log "cleaning up local"
     find "$BASE/.sync/versions" \
          -type d -depth 1 -not -name "$nvnum" -print \
          | xargs rm -rf
