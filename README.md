@@ -86,15 +86,26 @@ should _not_ result in all content being re-transferred.
 7. We can also clean up old local versions (keeping just the sandbox and Y).
 
 
-## Debug Notes
+## Init notes
 
-21255950        versions/0/1/1/e322833b4f7cb009931a62e08e3e7e0f
-21255950        test/1/1/e322833b4f7cb009931a62e08e3e7e0f
+Local states:
+1. BASE does not exist
+2. BASE exists, but no version
+3. BASE/.sync/versions/L exists
 
-21255950        versions/0/1/1/e322833b4f7cb009931a62e08e3e7e0f
-21255950        versions/1/123/1/e322833b4f7cb009931a62e08e3e7e0f
-21255950        versions/2/123/1/e322833b4f7cb009931a62e08e3e7e0f
-21255950        test/123/1/e322833b4f7cb009931a62e08e3e7e0f
+Remote states:
+1. BASE does not exist
+2. BASE exist, but no version
+3. BASE/.sync/versions/R exists
 
-
+Local,remote state pairs:
+1,1 - error message; do nothing
+1,2 - init remote, pull, init local
+1,3 - pull, init local (to match remote version)
+2,1 - init local, push
+2,2 - ask user if we should handle w/ push or pull
+2,3 - pull, init local (to match remote version)
+3,1 - push, init remote (to match local), sync
+3,2 - init remote, push, sync
+3,3 - sync
 

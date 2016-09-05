@@ -380,15 +380,19 @@ function cleanup_remote {
     local nvnum=$1
     log "cleaning up remote"
 
+    # Update the remote softlink which indicates which version this client
+    # needs.  Keep only those versions referenced by one of the clients;
+    # remove all other versions.
+    
     ssh -q -oConnectTimeout=1  "$REMOTE" <<EOF
-cd "$BASE/.sync"
-rm -f "clients/$LOCAL"
-ln -s "../versions/$nvnum" "clients/$LOCAL"
-used=\$(find clients -type l -exec readlink '{}' \; | xargs -n 1 basename)
-filter='(^'\$(echo \$used | tr ' ' '|')'$)'
-unused=\$(ls versions | egrep -v "\$filter" | sort -n)
-cd versions
-rm -rf \$unused
+    cd "$BASE/.sync"
+    rm -f "clients/$LOCAL"
+    ln -s "../versions/$nvnum" "clients/$LOCAL"
+    used=\$(find clients -type l -exec readlink '{}' \; | xargs -n 1 basename)
+    filter='(^'\$(echo \$used | tr ' ' '|')'$)'
+    unused=\$(ls versions | egrep -v "\$filter" | sort -n)
+    cd versions
+    rm -rf \$unused
 EOF
 }
 
@@ -396,6 +400,9 @@ EOF
 
 function cleanup_local {
     local nvnum=$1
+
+    # Remove every version except the most current.
+    
     log "cleaning up local"
     find "$BASE/.sync/versions" \
          -type d -depth 1 -not -name "$nvnum" -print \
@@ -405,20 +412,29 @@ function cleanup_local {
 ###############################################################################
 
 function sync {
-    log "--------------------------------------------------"
-    
+
+    # First, confirm that a sync is possible, in principle. 
     sanity_checks
+
+    # Get the most recent local and remote versions.
     local lvnum=$(ls "$BASE/.sync/versions" | sort -rn | head -1)
     local rvnum=$(rsh ls "$BASE/.sync/versions" | sort -rn | head -1)    
+
+    # Until we've confirmed a local change, assume the next version is the
+    # most recent remote version.
     local nvnum=$rvnum
+
+    # Check for local updates
     find_local_updates $lvnum
     local local_changes=$?
-    
+
+    # If there are local changes, or the local and remotes are on a different
+    # versions, then we need to do some real work.
     if [ "$local_changes" -eq 0 -o "$lvnum" -ne "$rvnum" ]; then
         acquire_lock
         pull_remote_version $lvnum $rvnum
         if [ "$local_changes" -eq 0 ]; then
-            # Bump version number
+            # Bump version number to account for local changes.
             nvnum=$(($rvnum + 1))    
             apply_remote_updates $lvnum $rvnum  $nvnum
             apply_local_updates $nvnum
