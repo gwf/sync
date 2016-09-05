@@ -1,22 +1,40 @@
 #!/bin/sh
 
-HOME=/Users/gary
-BASE=test
-REMOTE=diskstation
-LOCAL=$(hostname -s)
+LOCAL=/Users/gary/test
+CLIENT=$(hostname -s)
+SERVER=diskstation
+REMOTE=test
 
 
 ###############################################################################
 
 function help {
-    echo Neeed to write help sections
+    local prog=$(basename $0)
+    prefix="error:"
+    for msg in "$@"; do
+        echo "$prefix" "$msg" 1>&2 
+        prefix=$(echo "$prefix" | tr '[^ ]' ' ')
+    done
+    if [ $# -gt 0 ]; then echo "" 1>&2; fi
+    cat 1>&2 <<EOF
+usage: $prog init LOCAL SERVER:REMOTE
+       $prog update LOCAL
+EOF
     exit 0
 }
 
 ###############################################################################
 
+function realpath {
+    local path="$(cd ${1%/*}; pwd)/${1##*/}"
+    echo "${path%/}"
+}
+
+
+###############################################################################
+
 function rsh {
-    ssh -qn -oConnectTimeout=1 -oBatchMode=yes "$REMOTE" $@
+    ssh -qn -oConnectTimeout=1 -oBatchMode=yes "$SERVER" $@
 }
 
 ###############################################################################
@@ -44,12 +62,32 @@ function log {
 
 ###############################################################################
 
+function network_checks {    
+    log "performing networking checks"
+    
+    # Check that the remote end point is up and reachable
+    ping -c 1 "$SERVER" > /dev/null 2>&1
+    if [ $? != 0 ]; then
+        error "remote host $SERVER is unreachable"
+    fi
+    
+    # Check that the user can ssh into the server
+    rsh true > /dev/null 2>&1
+    if [ $? != 0 ]; then
+        error "unable to ssh to $SERVER." \
+              "You may need to setup public ssh keys on $SERVER."
+    fi
+}
+
+###############################################################################
+
 function sanity_checks {
+    
     log "performing sanity checks"
     
     # Check that the base directory exists
-    if [ ! -d "$HOME/$BASE" ]; then
-        error "sync directory $HOME/$BASE does not exist."
+    if [ ! -d "$LOCAL" ]; then
+        error "sync directory $LOCAL does not exist."
     fi
 
     # Check all files within $BASE are owned by the user running the script.
@@ -68,70 +106,21 @@ function sanity_checks {
               "Consider running: $cmd."
     fi
 
-    # Check that the remote end point is up and reachable
-    ping -c 1 "$REMOTE" > /dev/null 2>&1
-    if [ $? != 0 ]; then
-        error "remote host $REMOTE is unreachable"
-    fi
-    
-    # Check that the user can ssh into the server
-    rsh true > /dev/null 2>&1
-    if [ $? != 0 ]; then
-        error "unable to ssh to $REMOTE." \
-              "You may need to setup public ssh keys on $REMOTE."
-    fi
+    network_checks    
 
     # Check that the remote base directory exists.
-    rsh test -d "$BASE" > /dev/null 2>&1
+    rsh test -d "$REMOTE/.sync" > /dev/null 2>&1
     if [ $? != 0 ]; then
-        error "$BASE directory does not exist on $REMOTE." 
+        error "$REMOTE directory does not exist on $SERVER." 
     fi
     
-}
-
-###############################################################################
-
-function initialize_local_sync {
-    # TO DO: make this work relative to the state of the remote, thus allowing
-    # for new locals to be incrementally added.
-    
-    rm -rf "$BASE/.sync"
-    mkdir -p "$BASE/.sync/versions"
-    log "initializing local sync"
-    
-    rsync -a --delete \
-          --exclude=.sync \
-          --log-file="$BASE/.sync/log" \
-          --link-dest=../../.. \
-          "$BASE/" "$BASE/.sync/versions/0"
-
-    log "local sync initialized"
-}
-
-###############################################################################
-
-function initialize_remote_sync {    
-    log "initializing remote sync"
-    rsh rm -rf "$BASE/.sync"
-    rsh mkdir -p "$BASE/.sync/versions"
-    rsh mkdir -p "$BASE/.sync/clients"
-    
-    rsh rsync -a --delete \
-        --exclude=.sync \
-        --link-dest=../../.. \
-        "$BASE/" "$BASE/.sync/versions/0" \
-        >> "$BASE/.sync/log"
-    
-    rsh ln -s "../versions/0" "$BASE/.sync/clients/$LOCAL" 
-
-    log "remote sync initialized"
 }
 
 ###############################################################################
 
 function acquire_lock {
     log "acquiring lock"
-    local lock="$BASE/.sync/lock"
+    local lock="$REMOTE/.sync/lock"
     rsh "test \! -f $lock && touch $lock"
     if [ $? != 0 ]; then
         error "Unable to acquire server lock.  Please try again later."
@@ -142,7 +131,7 @@ function acquire_lock {
 
 function release_lock {
     log "releasing lock"
-    local lock="$BASE/.sync/lock"
+    local lock="$REMOTE/.sync/lock"
     rsh "rm $lock > /dev/null 2>&1"
     if [ $? != 0 ]; then
         error "Unable to release server lock." \
@@ -257,7 +246,7 @@ function pull_remote_version {
     if [ "$lvnum" -ne "$rvnum" ]; then
         log "pulling remote version $rvnum via local version $lvnum"
         rsync -aH \
-              "$REMOTE:$BASE/.sync/versions/{$lvnum,$rvnum}" \
+              "$SERVER:$REMOTE/.sync/versions/{$lvnum,$rvnum}" \
               "$BASE/.sync/versions"
     else
         log "skipping pull because versions match"            
@@ -364,13 +353,13 @@ function push_new_remote {
           --delete-after \
           "$BASE/.sync/versions/$rvnum" \
           "$BASE/.sync/versions/$nvnum" \
-          "$REMOTE:$BASE/.sync/versions"
+          "$SERVER:$REMOTE/.sync/versions"
 
     log "updating remote snapshot via version $nvnum"    
     rsh rsync -a --delete \
         --exclude=.sync \
         --link-dest=".sync/versions/$nvnum" \
-        "$BASE/.sync/versions/$nvnum/" "$BASE" \
+        "$REMOTE/.sync/versions/$nvnum/" "$REMOTE" \
         >> "$BASE/.sync/log"
 }
 
@@ -384,10 +373,10 @@ function cleanup_remote {
     # needs.  Keep only those versions referenced by one of the clients;
     # remove all other versions.
     
-    ssh -q -oConnectTimeout=1  "$REMOTE" <<EOF
-    cd "$BASE/.sync"
-    rm -f "clients/$LOCAL"
-    ln -s "../versions/$nvnum" "clients/$LOCAL"
+    ssh -q -oConnectTimeout=1  "$SERVER" <<EOF
+    cd "$REMOTE/.sync"
+    rm -f "clients/$CLIENT"
+    ln -s "../versions/$nvnum" "clients/$CLIENT"
     used=\$(find clients -type l -exec readlink '{}' \; | xargs -n 1 basename)
     filter='(^'\$(echo \$used | tr ' ' '|')'$)'
     unused=\$(ls versions | egrep -v "\$filter" | sort -n)
@@ -411,14 +400,23 @@ function cleanup_local {
 
 ###############################################################################
 
-function sync {
+function update {
+    LOCAL=$(realpath "$1")
+    HOME=$(dirname "$LOCAL")
+    BASE=$(basename "$LOCAL")
+    if [ ! -d "$HOME" ]; then
+        error "Home directory $HOME does not exist."
+    fi
+    cd "$HOME"
+    log "----------------------------------------"
+    log "starting..."
 
     # First, confirm that a sync is possible, in principle. 
     sanity_checks
 
     # Get the most recent local and remote versions.
     local lvnum=$(ls "$BASE/.sync/versions" | sort -rn | head -1)
-    local rvnum=$(rsh ls "$BASE/.sync/versions" | sort -rn | head -1)    
+    local rvnum=$(rsh ls "$REMOTE/.sync/versions" | sort -rn | head -1)    
 
     # Until we've confirmed a local change, assume the next version is the
     # most recent remote version.
@@ -447,26 +445,29 @@ function sync {
     else
         log "no changes on either side."
     fi
+    log "done."    
 }
 
+###############################################################################
+###############################################################################
 ###############################################################################
 
 function status {
     # Inspect the local and remote machines to see if they are in a good
     # state.
     
-    rsh test -d "$BASE/.sync"
+    rsh test -d "$REMOTE/.sync"
     local remote_stat=$?
 
     test -d "$BASE/.sync"
     local local_stat=$?
     
-    rsync -aiunO --delete --exclude=.sync/ "$BASE/" "$REMOTE:$BASE" \
+    rsync -aiunO --delete --exclude=.sync/ "$BASE/" "$SERVER:$REMOTE" \
           > /tmp/sync.$$
     local push_add=$(grep '^[<>]' /tmp/sync.$$ | wc -l | tr -d ' ')
     local push_del=$(grep '^*deleting' /tmp/sync.$$ | wc -l | tr -d ' ')
     
-    rsync -aiunO --delete --exclude=.sync/ "$REMOTE:$BASE/" "$BASE"  \
+    rsync -aiunO --delete --exclude=.sync/ "$SERVER:$REMOTE/" "$BASE"  \
           > /tmp/sync.$$
     local pull_add=$(grep '^[<>]' /tmp/sync.$$ | wc -l | tr -d ' ')
     local pull_del=$(grep '^*deleting' /tmp/sync.$$ | wc -l | tr -d ' ')
@@ -491,35 +492,96 @@ function status {
 
 ###############################################################################
 
-function main {
-    if [ ! -d "$HOME" ]; then
-        error "Home directory $HOME does not exist."
-    fi
-    cd "$HOME"
+function initialize_local_sync {
+    # TO DO: make this work relative to the state of the remote, thus allowing
+    # for new locals to be incrementally added.
     
-    while true; do        
-        case $1 in
-            -h|-\?|--help)
-                help
-                ;;
-            status)
-                sanity_checks
-                status
-                ;;
-            init)
-                sanity_checks
-                initialize_local_sync
-                initialize_remote_sync
-                ;;
-            sync)
-                sync
-                ;;
-            *)
-                break
-                ;;
-        esac
-        shift
-    done
+    rm -rf "$BASE/.sync"
+    mkdir -p "$BASE/.sync/versions"
+    log "initializing local sync"
+    
+    rsync -a --delete \
+          --exclude=.sync \
+          --log-file="$BASE/.sync/log" \
+          --link-dest=../../.. \
+          "$BASE/" "$BASE/.sync/versions/0"
+
+    log "local sync initialized"
+}
+
+###############################################################################
+
+function initialize_remote_sync {    
+    log "initializing remote sync"
+    rsh rm -rf "$REMOTE/.sync"
+    rsh mkdir -p "$REMOTE/.sync/versions"
+    rsh mkdir -p "$REMOTE/.sync/clients"
+    
+    rsh rsync -a --delete \
+        --exclude=.sync \
+        --link-dest=../../.. \
+        "$REMOTE/" "$REMOTE/.sync/versions/0" \
+        >> "$REMOTE/.sync/log"
+    
+    rsh ln -s "../versions/0" "$REMOTE/.sync/clients/$CLIENT" 
+
+    log "remote sync initialized"
+}
+
+###############################################################################
+
+function init {
+    LOCAL=$(realpath "$1")
+    HOME=$(dirname "$LOCAL")
+    BASE=$(basename "$LOCAL")
+
+    SERVER="${2%:*}"
+    REMOTE="${2#*:}"
+    if [ "$SERVER:$REMOTE" != "$2" ]; then
+        help "malformed SERVER:REMOTE arguments"
+    fi
+    REMOTE="${REMOTE%/}"
+
+    
+    
+}
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+function main {
+    if [ $# -eq 0 ]; then help; fi
+
+    case $1 in
+        -h|-\?|--help)
+            help
+            ;;
+        init)
+            if [ $# -ne 3 ]; then
+                help "expected LOCAL, SERVER, and REMOTE to be specified."
+            fi
+            init "$2" "$3"
+            ;;
+        update)
+            if [ $# -ne 2 ]; then
+                help "expected LOCAL to be specified."
+            fi
+            update "$2"
+            ;;
+        status)
+            sanity_checks
+            status
+            ;;
+        oldinit)
+            sanity_checks
+            initialize_local_sync
+            initialize_remote_sync
+            ;;
+        *)
+            help "unexpected command-line arguments."
+            ;;
+    esac
 }
 
 ###############################################################################
