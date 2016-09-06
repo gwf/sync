@@ -159,7 +159,7 @@ function find_local_updates {
     local lvnum=$1
     local prev="$BASE/.sync/versions/$lvnum"
 
-    # List all file names in the local snapshot.  This will help us identify
+    # List all file names in the local sandbox.  This will help us identify
     # additions relative to the last sync.  We don't need to note directories
     # because they will implicitly be included by the files they contain.    
     ( cd $BASE; find . -type f -not -path './.sync/*' -print ) \
@@ -181,14 +181,14 @@ function find_local_updates {
     rm -f "$BASE/.sync/dirs"; touch "$BASE/.sync/dirs"    
 
     # Iterate over all names, and use differences between the previous version
-    # and the local snapshot as a way of identifying individual updates.
+    # and the local sandbox as a way of identifying individual updates.
     cat "$BASE/.sync/all" | (
         while read fname; do
             if [ -d "$prev/$fname" ]; then
                 # This is a directory found in the previous sync ...
                 if [ \! -d "$BASE/$fname" ]; then
                     # ... that appears to be deleted because it was is not in
-                    # the local snapshot.
+                    # the local sandbox.
                     echo "$fname" >> "$BASE/.sync/dirs"
                 fi
                 continue
@@ -197,12 +197,12 @@ function find_local_updates {
                 # to the same file.
                 continue
             elif [ -f "$BASE/$fname" ]; then
-                # The file exists in the snapshot, but is different from the
+                # The file exists in the sandbox, but is different from the
                 # last synced version, so it's a new addition.
                 echo "$fname" >> "$BASE/.sync/additions"
             else
                 # The file exists in the last synced version but is not in the
-                # snapshot, so it was deleted.
+                # sandbox, so it was deleted.
                 echo "$fname" >> "$BASE/.sync/deletions"
             fi            
         done
@@ -262,7 +262,7 @@ function apply_remote_updates {
 
     if [  "$rvnum" -ne "$lvnum" ]; then
         # The most recent local and remote versions are different.  We've
-        # already noted the local changes between the snapshot and the
+        # already noted the local changes between the sandbox and the
         # more recent local version, so it's okay to rename the last
         # local version to the next version.        
         log "moving version $lvnum to $nvnum"
@@ -294,7 +294,7 @@ function apply_local_updates {
     local nvnum=$1
 
     # Now that the next version has the last local and remote syncs
-    # reconciled, we now need to apply the local snapshot updates to the next
+    # reconciled, we now need to apply the local sandbox updates to the next
     # version.
     
     log "applying local additions to $nvnum"    
@@ -331,10 +331,10 @@ function apply_local_updates {
 
 ###############################################################################
 
-function update_local_snapshot {
+function update_local_sandbox {
     local nvnum=$1
     
-    log "updating local snapshot via version $nvnum"
+    log "updating local sandbox via version $nvnum"
     rsync -aq --delete \
           --exclude=.sync \
           --link-dest=".sync/versions/$nvnum" \
@@ -355,7 +355,7 @@ function push_new_remote {
           "$BASE/.sync/versions/$nvnum" \
           "$SERVER:$REMOTE/.sync/versions"
 
-    log "updating remote snapshot via version $nvnum"    
+    log "updating remote sandbox via version $nvnum"    
     rsh rsync -a --delete \
         --exclude=.sync \
         --link-dest=".sync/versions/$nvnum" \
@@ -439,7 +439,7 @@ function update {
             push_new_remote $rvnum $nvnum
         fi
         cleanup_remote $nvnum
-        update_local_snapshot $nvnum        
+        update_local_sandbox $nvnum        
         cleanup_local $nvnum
         release_lock
     else
@@ -530,19 +530,60 @@ function initialize_remote_sync {
 
 ###############################################################################
 
-function init {
-    LOCAL=$(realpath "$1")
+function parse_init_args {
+    # Get the canonical form of the local directory name.
+    if [ ! -d "$1" ]; then
+        if mkdir "$1" > /dev/null 2>&1; then
+            LOCAL=$(realpath "$1")
+            rmdir "$1"
+        else
+            error "unable to create local sync directory, $1."
+        fi
+    else
+        LOCAL=$(realpath "$1")
+    fi
     HOME=$(dirname "$LOCAL")
     BASE=$(basename "$LOCAL")
 
+    # Split apart the SERVER:REMOTE argument and clean it up.
     SERVER="${2%:*}"
     REMOTE="${2#*:}"
     if [ "$SERVER:$REMOTE" != "$2" ]; then
         help "malformed SERVER:REMOTE arguments"
     fi
-    REMOTE="${REMOTE%/}"
+    REMOTE="${REMOTE%/}"    
+}
 
-    
+###############################################################################
+
+function probe_init_state {
+    # Probe  local and remote to find the state of each:
+    local local_state=0
+    if [ -d "$LOCAL" ]; then
+        local_state=1
+        if [ -d "$LOCAL/.sync/versions" ]; then
+            local_state=2
+        fi
+    fi
+    local remote_state=0
+    if rsh test -d "$REMOTE"; then
+        remote_state=1
+        if rsh test -d "$REMOTE/.sync/versions"; then
+            remote_state=2
+        fi
+    fi
+    echo "$local_state$remote_state"    
+}
+
+###############################################################################
+
+function init {
+    local client="$1"
+    local server="$2"
+
+    parse_init_args "$client" "$server"
+    network_checks
+    local state=$(probe_init_state)
     
 }
 
