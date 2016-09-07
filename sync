@@ -587,11 +587,16 @@ function init {
     parse_init_args "$client" "$server"
     network_checks
     local state=$(probe_init_state)
+    local client_state=${state%-*}
+    local server_state=${state#*-}
+    echo $state, $client_state, $server_state
     case $state in
+        # local state - remote state
         missing-missing)
             error "at least one of LOCAL or SERVER:REMOTE must preexist."
             ;;
-        missing-exists)            
+        missing-exists)
+            
             ;;
         missing-ready)
             ;;
