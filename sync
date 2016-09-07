@@ -17,7 +17,8 @@ function help {
     done
     if [ $# -gt 0 ]; then echo "" 1>&2; fi
     cat 1>&2 <<- EOF
-	usage: $prog init LOCAL SERVER:REMOTE
+	usage: $prog link LOCAL SERVER:REMOTE
+	       $prog unlink LOCAL 
 	       $prog update LOCAL
 	EOF
     exit 0
