@@ -581,34 +581,38 @@ function probe_init_state {
 
 ###############################################################################
 
-function init {
+function init_link {
     local client="$1"
     local server="$2"
 
     parse_init_args "$client" "$server"
     network_checks
     local state=$(probe_init_state)
-    case $state in
-        missing-missing)
-            error "at least one of LOCAL or SERVER:REMOTE must preexist."
-            ;;
-        missing-exists)            
-            ;;
-        missing-ready)
-            ;;
-        exists-missing)
-            ;;
-        exists-exists)
-            ;;
-        exists-ready)
-            ;;
-        ready-missing)
-            ;;
-        ready-exists)
-            ;;
-        ready-ready)
-            ;;
-    esac
+    local client_state=${state%-*}
+    local server_state=${state#*-}
+    #echo $state, $client_state, $server_state
+
+    if [ "$state" = "missing-missing" ]; then
+        error "Neither $client nor $server exist." \
+            "At least one side must pre-exist to establish a link."
+    elif  [ "$state" = "ready-missing" ]; then
+        error "$client is already linked while $server is unlinked." \
+              "Consider unlinking the $client from it's current remote server."
+    fi
+
+
+    
+
+    if [ "$client_state" = "missing" ]; then
+        echo rsync pull
+    elif [ "$client_state" = "missing" ]; then
+         echo rsync push
+    fi
+
+    
+    
+
+    
 }
 
 ###############################################################################
@@ -623,12 +627,12 @@ function main {
         -h|-\?|--help)
             help
             ;;
-        init)
+        link)
             if [ $# -ne 3 ]; then
                 help "expected LOCAL, SERVER, and REMOTE to be specified."
             fi
-            init "$2" "$3"
-            ;;
+            init_link "$2" "$3"
+            ;;        
         update)
             if [ $# -ne 2 ]; then
                 help "expected LOCAL to be specified."
