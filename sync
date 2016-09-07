@@ -16,10 +16,10 @@ function help {
         prefix=$(echo "$prefix" | tr '[^ ]' ' ')
     done
     if [ $# -gt 0 ]; then echo "" 1>&2; fi
-    cat 1>&2 <<EOF
-usage: $prog init LOCAL SERVER:REMOTE
-       $prog update LOCAL
-EOF
+    cat 1>&2 <<- EOF
+	usage: $prog init LOCAL SERVER:REMOTE
+	       $prog update LOCAL
+	EOF
     exit 0
 }
 
@@ -373,16 +373,16 @@ function cleanup_remote {
     # needs.  Keep only those versions referenced by one of the clients;
     # remove all other versions.
     
-    ssh -q -oConnectTimeout=1  "$SERVER" <<EOF
-    cd "$REMOTE/.sync"
-    rm -f "clients/$CLIENT"
-    ln -s "../versions/$nvnum" "clients/$CLIENT"
-    used=\$(find clients -type l -exec readlink '{}' \; | xargs -n 1 basename)
-    filter='(^'\$(echo \$used | tr ' ' '|')'$)'
-    unused=\$(ls versions | egrep -v "\$filter" | sort -n)
-    cd versions
-    rm -rf \$unused
-EOF
+    ssh -q -oConnectTimeout=1  "$SERVER" <<- EOF
+	cd "$REMOTE/.sync"
+	rm -f "clients/$CLIENT"
+	ln -s "../versions/$nvnum" "clients/$CLIENT"
+	used=\$(find clients -type l -exec readlink '{}' \; | xargs -n 1 basename)
+	filter='(^'\$(echo \$used | tr ' ' '|')'$)'
+	unused=\$(ls versions | egrep -v "\$filter" | sort -n)
+	cd versions
+	rm -rf \$unused
+	EOF
 }
 
 ###############################################################################
@@ -391,7 +391,6 @@ function cleanup_local {
     local nvnum=$1
 
     # Remove every version except the most current.
-    
     log "cleaning up local"
     find "$BASE/.sync/versions" \
          -type d -depth 1 -not -name "$nvnum" -print \
@@ -491,6 +490,8 @@ function status {
 }
 
 ###############################################################################
+###############################################################################
+###############################################################################
 
 function initialize_local_sync {
     # TO DO: make this work relative to the state of the remote, thus allowing
@@ -531,6 +532,8 @@ function initialize_remote_sync {
 ###############################################################################
 
 function parse_init_args {
+    # Warning: this is one big side effect on globals.
+    
     # Get the canonical form of the local directory name.
     if [ ! -d "$1" ]; then
         if mkdir "$1" > /dev/null 2>&1; then
@@ -558,21 +561,21 @@ function parse_init_args {
 
 function probe_init_state {
     # Probe  local and remote to find the state of each:
-    local local_state=0
+    local local_state=missing
     if [ -d "$LOCAL" ]; then
-        local_state=1
+        local_state=exists
         if [ -d "$LOCAL/.sync/versions" ]; then
-            local_state=2
+            local_state=ready
         fi
     fi
-    local remote_state=0
+    local remote_state=missing
     if rsh test -d "$REMOTE"; then
-        remote_state=1
+        remote_state=exists
         if rsh test -d "$REMOTE/.sync/versions"; then
-            remote_state=2
+            remote_state=ready
         fi
     fi
-    echo "$local_state$remote_state"    
+    echo "$local_state-$remote_state"    
 }
 
 ###############################################################################
@@ -584,12 +587,33 @@ function init {
     parse_init_args "$client" "$server"
     network_checks
     local state=$(probe_init_state)
-    
+    case $state in
+        missing-missing)
+            error "at least one of LOCAL or SERVER:REMOTE must preexist."
+            ;;
+        missing-exists)            
+            ;;
+        missing-ready)
+            ;;
+        exists-missing)
+            ;;
+        exists-exists)
+            ;;
+        exists-ready)
+            ;;
+        ready-missing)
+            ;;
+        ready-exists)
+            ;;
+        ready-ready)
+            ;;
+    esac
 }
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
+
 
 function main {
     if [ $# -eq 0 ]; then help; fi
@@ -613,11 +637,6 @@ function main {
         status)
             sanity_checks
             status
-            ;;
-        oldinit)
-            sanity_checks
-            initialize_local_sync
-            initialize_remote_sync
             ;;
         *)
             help "unexpected command-line arguments."
