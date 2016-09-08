@@ -12,8 +12,8 @@ function help {
     local prog=$(basename $0)
     prefix="error:"
     for msg in "$@"; do
-        echo "$prefix" "$msg" 1>&2 
-        prefix=$(echo "$prefix" | tr '[^ ]' ' ')
+        echo "$prefix $msg" 1>&2 
+        prefix=$(echo "$prefix" | tr -C ' \n' ' ')
     done
     if [ $# -gt 0 ]; then echo "" 1>&2; fi
     cat 1>&2 <<- EOF
@@ -22,20 +22,6 @@ function help {
 	       $prog update LOCAL
 	EOF
     exit 0
-}
-
-###############################################################################
-
-function realpath {
-    local path="$(cd ${1%/*}; pwd)/${1##*/}"
-    echo "${path%/}"
-}
-
-
-###############################################################################
-
-function rsh {
-    ssh -qn -oConnectTimeout=1 -oBatchMode=yes "$SERVER" $@
 }
 
 ###############################################################################
@@ -59,6 +45,24 @@ function log {
     for msg in "$@"; do
         echo "$prefix $msg" >> "$BASE/.sync/log"
     done
+}
+
+###############################################################################
+
+function realpath {
+    local path="${1%/}"
+    if [ "$path" = "${path##*/}" ]; then
+        echo "$(cd $path; pwd)"
+    else
+        echo "$(cd ${path%/*}; pwd)/${path##*/}"
+    fi
+}
+
+
+###############################################################################
+
+function rsh {
+    ssh -qn -oConnectTimeout=1 -oBatchMode=yes "$SERVER" $@
 }
 
 ###############################################################################
@@ -555,7 +559,9 @@ function parse_init_args {
     if [ "$SERVER:$REMOTE" != "$2" ]; then
         help "malformed SERVER:REMOTE arguments"
     fi
-    REMOTE="${REMOTE%/}"    
+    REMOTE="${REMOTE%/}"
+    log "client location is $LOCAL"
+    log "server location is $SERVER:$REMOTE"    
 }
 
 ###############################################################################
@@ -589,35 +595,30 @@ function init_link {
     network_checks
     local state=$(probe_init_state)
     local client_state=${state%-*}
-    local server_state=${state#*-}
-    echo $state, $client_state, $server_state
+    local server_state=${state#*-}    
 
-    if [ "$state" = "missing-missing" ]; then
-        error "Neither $client nor $server exist." \
-            "At least one side must pre-exist to establish a link."
-    elif  [ "$client_state" = "ready"  ]; then
-        if [ "server_state" != "ready" ]; then
-            error "$client is already linked while $server is unlinked." \
-                  "You may want to unlink $client first."
-        else
-            # ready-ready
+    case "$state" in
+        "missing-missing")
+            help "Neither $client nor $server exist." \
+                 "At least one side must pre-exist to establish a link."
+            ;;
+        "ready-missing" | "ready-exists")
+            help "$client is already linked while $server is unlinked." \
+                 "You should unlink $client first and then relink."
+            ;;
+        "ready-ready")
             echo need to check the links are to each other already
-        fi
-    fi
-
-
-    
-
-    if [ "$client_state" = "missing" ]; then
-        echo rsync pull
-    elif [ "$client_state" = "missing" ]; then
-         echo rsync push
-    fi
-
-    
-    
-
-    
+            ;;
+        "missing-exists" | "missing-ready")
+            echo pull, init client, maybe init server
+            ;;
+        "exists-missing")
+            echo push, init client, init server
+            ;;
+        "exists-ready" | "exists-exists")
+            echo merge, init client, maybe init server
+            ;;
+    esac
 }
 
 ###############################################################################
