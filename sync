@@ -590,14 +590,19 @@ function init_link {
     local state=$(probe_init_state)
     local client_state=${state%-*}
     local server_state=${state#*-}
-    #echo $state, $client_state, $server_state
+    echo $state, $client_state, $server_state
 
     if [ "$state" = "missing-missing" ]; then
         error "Neither $client nor $server exist." \
             "At least one side must pre-exist to establish a link."
-    elif  [ "$state" = "ready-missing" ]; then
-        error "$client is already linked while $server is unlinked." \
-              "Consider unlinking the $client from it's current remote server."
+    elif  [ "$client_state" = "ready"  ]; then
+        if [ "server_state" != "ready" ]; then
+            error "$client is already linked while $server is unlinked." \
+                  "You may want to unlink $client first."
+        else
+            # ready-ready
+            echo need to check the links are to each other already
+        fi
     fi
 
 
