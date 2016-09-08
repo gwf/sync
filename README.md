@@ -109,3 +109,20 @@ Local,remote state pairs:
 3,2 - init remote, push, sync
 3,3 - sync
 
+
+missing-missing - error, can't proceed
+
+missing-{exist,ready} - simple pull, init client
+    missing-exists - init server
+    missing-ready - NOOP
+
+{exist,ready}-missing - simple push, init remote
+    exists-missing - init client
+    ready-missing - NOOP
+
+exists-ready - merge, init client
+exists-exist - merge, init client, init server
+
+ready-exists - error
+
+ready-ready
