@@ -560,8 +560,8 @@ function parse_init_args {
         help "malformed SERVER:REMOTE arguments"
     fi
     REMOTE="${REMOTE%/}"
-    log "client location is $LOCAL"
-    log "server location is $SERVER:$REMOTE"    
+    log "client location: $LOCAL"
+    log "server location: $SERVER:$REMOTE"    
 }
 
 ###############################################################################
@@ -611,6 +611,7 @@ function init_link {
             ;;
         "missing-exists" | "missing-ready")
             echo pull, init client, maybe init server
+            
             ;;
         "exists-missing")
             echo push, init client, init server
