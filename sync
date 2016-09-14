@@ -6,7 +6,7 @@ SERVER=diskstation
 REMOTE=test
 
 
-###############################################################################
+#############################################################################
 
 function help {
     local prog=$(basename $0)
@@ -24,7 +24,7 @@ function help {
     exit 0
 }
 
-###############################################################################
+#############################################################################
 
 function error {
     prefix="error:"
@@ -35,7 +35,7 @@ function error {
     exit 1
 }
 
-###############################################################################
+#############################################################################
 
 function log {
     if [ ! -d "$BASE/.sync" ]; then
@@ -47,7 +47,7 @@ function log {
     done
 }
 
-###############################################################################
+#############################################################################
 
 function realpath {
     local path="${1%/}"
@@ -59,13 +59,13 @@ function realpath {
 }
 
 
-###############################################################################
+#############################################################################
 
 function rsh {
     ssh -qn -oConnectTimeout=1 -oBatchMode=yes "$SERVER" $@
 }
 
-###############################################################################
+#############################################################################
 
 function network_checks {    
     log "performing networking checks"
@@ -84,7 +84,7 @@ function network_checks {
     fi
 }
 
-###############################################################################
+#############################################################################
 
 function sanity_checks {
     
@@ -97,7 +97,8 @@ function sanity_checks {
 
     # Check all files within $BASE are owned by the user running the script.
     local whoami=$(whoami)
-    local notowned=$(find $BASE -not -user $whoami -print | wc -l | tr -d ' ')
+    local notowned=$(find $BASE -not -user $whoami -print \
+                            | wc -l | tr -d ' ')
     if [ "$notowned" != "0" ]; then
         error "$notowned file(s) within $BASE not owned by $whoami" \
               "Consider running: 'sudo chown -R $whoami $BASE'."
@@ -121,7 +122,7 @@ function sanity_checks {
     
 }
 
-###############################################################################
+#############################################################################
 
 function acquire_lock {
     log "acquiring lock"
@@ -132,7 +133,7 @@ function acquire_lock {
     fi
 }
 
-###############################################################################
+#############################################################################
 
 function release_lock {
     log "releasing lock"
@@ -144,7 +145,7 @@ function release_lock {
     fi
 }
 
-###############################################################################
+#############################################################################
 
 function list_ancestors {
     while read path; do
@@ -157,7 +158,7 @@ function list_ancestors {
     done
 }
 
-###############################################################################
+#############################################################################
 
 function find_local_updates {
     log "finding local updates"
@@ -165,15 +166,16 @@ function find_local_updates {
     local prev="$BASE/.sync/versions/$lvnum"
 
     # List all file names in the local sandbox.  This will help us identify
-    # additions relative to the last sync.  We don't need to note directories
-    # because they will implicitly be included by the files they contain.    
+    # additions relative to the last sync.  We don't need to note
+    # directories because they will implicitly be included by the files they
+    # contain.
     ( cd $BASE; find . -type f -not -path './.sync/*' -print ) \
         | sed 's/^\.//g' \
         > "$BASE/.sync/new"
 
     # List all file names from the last local version that was synced to the
-    # remote.  This will help us find deletions.  We include non-files so that
-    # we can test for their removal as well.
+    # remote.  This will help us find deletions.  We include non-files so
+    # that we can test for their removal as well.
     ( cd $prev; find . -true -print ) \
         | sed 's/^\.//g' \
         > "$BASE/.sync/old"
@@ -185,29 +187,30 @@ function find_local_updates {
     rm -f "$BASE/.sync/deletions"; touch "$BASE/.sync/deletions"    
     rm -f "$BASE/.sync/dirs"; touch "$BASE/.sync/dirs"    
 
-    # Iterate over all names, and use differences between the previous version
-    # and the local sandbox as a way of identifying individual updates.
+    # Iterate over all names, and use differences between the previous
+    # version and the local sandbox as a way of identifying individual
+    # updates.
     cat "$BASE/.sync/all" | (
         while read fname; do
             if [ -d "$prev/$fname" ]; then
                 # This is a directory found in the previous sync ...
                 if [ \! -d "$BASE/$fname" ]; then
-                    # ... that appears to be deleted because it was is not in
-                    # the local sandbox.
+                    # ... that appears to be deleted because it was is not
+                    # in the local sandbox.
                     echo "$fname" >> "$BASE/.sync/dirs"
                 fi
                 continue
             elif [ "$BASE/$fname" -ef "$prev/$fname" ]; then
-                # Skip any named file in which the two versions are hardlinks
-                # to the same file.
+                # Skip any named file in which the two versions are
+                # hardlinks to the same file.
                 continue
             elif [ -f "$BASE/$fname" ]; then
                 # The file exists in the sandbox, but is different from the
                 # last synced version, so it's a new addition.
                 echo "$fname" >> "$BASE/.sync/additions"
             else
-                # The file exists in the last synced version but is not in the
-                # sandbox, so it was deleted.
+                # The file exists in the last synced version but is not in
+                # the sandbox, so it was deleted.
                 echo "$fname" >> "$BASE/.sync/deletions"
             fi            
         done
@@ -237,16 +240,16 @@ function find_local_updates {
     return $?
 }
 
-###############################################################################
+#############################################################################
 
 function pull_remote_version {
     local lvnum=$1
     local rvnum=$2
 
-    # If versions $lvnum and $rvnum on the remote server have hardlinks
-    # on the files that they have in common, then pulling over both
-    # versions simultaneously (and with the -H flag) will insure that
-    # moves and renames will be handled efficiently.
+    # If versions $lvnum and $rvnum on the remote server have hardlinks on
+    # the files that they have in common, then pulling over both versions
+    # simultaneously (and with the -H flag) will insure that moves and
+    # renames will be handled efficiently.
     
     if [ "$lvnum" -ne "$rvnum" ]; then
         log "pulling remote version $rvnum via local version $lvnum"
@@ -258,7 +261,7 @@ function pull_remote_version {
     fi    
 }
 
-###############################################################################
+#############################################################################
 
 function apply_remote_updates {
     local lvnum=$1
@@ -267,24 +270,23 @@ function apply_remote_updates {
 
     if [  "$rvnum" -ne "$lvnum" ]; then
         # The most recent local and remote versions are different.  We've
-        # already noted the local changes between the sandbox and the
-        # more recent local version, so it's okay to rename the last
-        # local version to the next version.        
+        # already noted the local changes between the sandbox and the more
+        # recent local version, so it's okay to rename the last local
+        # version to the next version.
         log "moving version $lvnum to $nvnum"
         mv "$BASE/.sync/versions/$lvnum" "$BASE/.sync/versions/$nvnum"
     fi
 
-    # We still need to apply the last remote version's updates
-    # on top of the next version.  If the condition above was true,
-    # then the next command will "patch" the new version to include
-    # the remote's most recent updates.  But if the condition above
-    # is false, then the command above effectively does a copy
-    # with hardlinks preserved.
+    # We still need to apply the last remote version's updates on top of the
+    # next version.  If the condition above was true, then the next command
+    # will "patch" the new version to include the remote's most recent
+    # updates.  But if the condition above is false, then the command above
+    # effectively does a copy with hardlinks preserved.
 
     log "applying remote updates from version $rvnum to $nvnum"
 
-    # In the future, I may want to log the line below if we did the
-    # move above (but otherwise not).
+    # In the future, I may want to log the line below if we did the move
+    # above (but otherwise not).
     
     rsync -a --delete  \
           --link-dest=../../.. \
@@ -293,7 +295,7 @@ function apply_remote_updates {
           "$BASE/.sync/versions/$nvnum"
 }
 
-###############################################################################
+#############################################################################
 
 function apply_local_updates {
     local nvnum=$1
@@ -334,7 +336,7 @@ function apply_local_updates {
     )
 }
 
-###############################################################################
+#############################################################################
 
 function update_local_sandbox {
     local nvnum=$1
@@ -347,7 +349,7 @@ function update_local_sandbox {
           >> "$BASE/.sync/log"
 }
 
-###############################################################################
+#############################################################################
 
 function push_new_remote {
     local rvnum=$1
@@ -368,7 +370,7 @@ function push_new_remote {
         >> "$BASE/.sync/log"
 }
 
-###############################################################################
+#############################################################################
 
 function cleanup_remote {
     local nvnum=$1
@@ -382,7 +384,8 @@ function cleanup_remote {
 	cd "$REMOTE/.sync"
 	rm -f "clients/$CLIENT"
 	ln -s "../versions/$nvnum" "clients/$CLIENT"
-	used=\$(find clients -type l -exec readlink '{}' \; | xargs -n 1 basename)
+	used=\$(find clients -type l -exec readlink '{}' \; \
+            | xargs -n 1 basename)
 	filter='(^'\$(echo \$used | tr ' ' '|')'$)'
 	unused=\$(ls versions | egrep -v "\$filter" | sort -n)
 	cd versions
@@ -390,7 +393,7 @@ function cleanup_remote {
 	EOF
 }
 
-###############################################################################
+#############################################################################
 
 function cleanup_local {
     local nvnum=$1
@@ -402,7 +405,7 @@ function cleanup_local {
          | xargs rm -rf
 }
 
-###############################################################################
+#############################################################################
 
 function update {
     LOCAL=$(realpath "$1")
@@ -430,8 +433,8 @@ function update {
     find_local_updates $lvnum
     local local_changes=$?
 
-    # If there are local changes, or the local and remotes are on a different
-    # versions, then we need to do some real work.
+    # If there are local changes, or the local and remotes are on a
+    # different versions, then we need to do some real work.
     if [ "$local_changes" -eq 0 -o "$lvnum" -ne "$rvnum" ]; then
         acquire_lock
         pull_remote_version $lvnum $rvnum
@@ -452,9 +455,9 @@ function update {
     log "done."    
 }
 
-###############################################################################
-###############################################################################
-###############################################################################
+#############################################################################
+#############################################################################
+#############################################################################
 
 function status {
     # Inspect the local and remote machines to see if they are in a good
@@ -494,18 +497,22 @@ function status {
     echo Pull would update $pull_add files and delete $pull_del files.
 }
 
-###############################################################################
-###############################################################################
-###############################################################################
+#############################################################################
+#############################################################################
+#############################################################################
 
-function initialize_local_sync {
-    # TO DO: make this work relative to the state of the remote, thus allowing
-    # for new locals to be incrementally added.
-    
+function init_local_sandbox {
     rm -rf "$BASE/.sync"
     mkdir -p "$BASE/.sync/versions"
-    log "initializing local sync"
-    
+    log "initializing local sandbox"
+
+    # Add config file to store SERVER and REMOTE
+    cat <<- EOF > "$BASE/.sync/config"
+	SERVER="$SERVER"
+	REMOTE="$REMOTE"
+	EOF
+
+    # FIXME: version below needs to match remote
     rsync -a --delete \
           --exclude=.sync \
           --log-file="$BASE/.sync/log" \
@@ -515,10 +522,11 @@ function initialize_local_sync {
     log "local sync initialized"
 }
 
-###############################################################################
+#############################################################################
 
-function initialize_remote_sync {    
-    log "initializing remote sync"
+function init_remote_sandbox {
+    # TODO: rework to be a single rsh
+    log "initializing remote sandbox"
     rsh rm -rf "$REMOTE/.sync"
     rsh mkdir -p "$REMOTE/.sync/versions"
     rsh mkdir -p "$REMOTE/.sync/clients"
@@ -534,7 +542,7 @@ function initialize_remote_sync {
     log "remote sync initialized"
 }
 
-###############################################################################
+#############################################################################
 
 function parse_init_args {
     # Warning: this is one big side effect on globals.
@@ -564,7 +572,7 @@ function parse_init_args {
     log "server location: $SERVER:$REMOTE"    
 }
 
-###############################################################################
+#############################################################################
 
 function probe_init_state {
     # Probe  local and remote to find the state of each:
@@ -585,7 +593,7 @@ function probe_init_state {
     echo "$local_state-$remote_state"    
 }
 
-###############################################################################
+#############################################################################
 
 function init_link {
     local client="$1"
@@ -596,7 +604,8 @@ function init_link {
     local state=$(probe_init_state)
     local client_state=${state%-*}
     local server_state=${state#*-}    
-
+    cd "$HOME"
+    
     case "$state" in
         "missing-missing")
             help "Neither $client nor $server exist." \
@@ -611,6 +620,10 @@ function init_link {
             ;;
         "missing-exists" | "missing-ready")
             echo pull, init client, maybe init server
+            rsync -OHauq  \
+                  --exclude=.sync/ \
+                  "$BASE/" "$SERVER:$REMOTE"
+            init_local_sandbox
             
             ;;
         "exists-missing")
@@ -622,9 +635,9 @@ function init_link {
     esac
 }
 
-###############################################################################
-###############################################################################
-###############################################################################
+#############################################################################
+#############################################################################
+#############################################################################
 
 
 function main {
@@ -656,7 +669,7 @@ function main {
     esac
 }
 
-###############################################################################
+#############################################################################
 
 main $*
 
