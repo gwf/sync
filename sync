@@ -502,6 +502,9 @@ function status {
 #############################################################################
 
 function init_local_sandbox {
+    local lvnum=$1
+
+    # Wipe out all meta data
     rm -rf "$BASE/.sync"
     mkdir -p "$BASE/.sync/versions"
     log "initializing local sandbox"
@@ -512,12 +515,12 @@ function init_local_sandbox {
 	REMOTE="$REMOTE"
 	EOF
 
-    # FIXME: version below needs to match remote
+    # 
     rsync -a --delete \
           --exclude=.sync \
           --log-file="$BASE/.sync/log" \
           --link-dest=../../.. \
-          "$BASE/" "$BASE/.sync/versions/0"
+          "$BASE/" "$BASE/.sync/versions/$lvnum"
 
     log "local sync initialized"
 }
@@ -537,8 +540,6 @@ function init_remote_sandbox {
         "$REMOTE/" "$REMOTE/.sync/versions/0" \
         >> "$REMOTE/.sync/log"
     
-    rsh ln -s "../versions/0" "$REMOTE/.sync/clients/$CLIENT" 
-
     log "remote sync initialized"
 }
 
@@ -598,7 +599,8 @@ function probe_init_state {
 function init_link {
     local client="$1"
     local server="$2"
-
+    local rvnum=
+    
     parse_init_args "$client" "$server"
     network_checks
     local state=$(probe_init_state)
@@ -616,26 +618,45 @@ function init_link {
                  "You should unlink $client first and then relink."
             ;;
         "ready-ready")
-            echo need to check the links are to each other already
+            help "$client and $server are already linked."
             ;;
-        "missing-exists" | "missing-ready")
-            echo pull, init client, maybe init server
-            
+        "missing-exists" | "missing-ready")            
             if [ "$server_state" = "exists" ]; then
                 init_remote_sandbox
-                
-            
-            rsync -OHauq  \
-                  --exclude=.sync/ \
-                  "$SERVER:$REMOTE/" "$BASE"
-            init_local_sandbox
-            
+            fi
+            rvnum=$(rsh ls "$REMOTE/.sync/versions" | sort -rn | head -1)
+            rsync -OHauq --exclude=.sync/ "$SERVER:$REMOTE/" "$BASE"
+            init_local_sandbox "$rvnum"
+            rsh ln -s "../versions/$rvnum" "$REMOTE/.sync/clients/$CLIENT" 
             ;;
         "exists-missing")
-            echo push, init client, init server
+            rsync -OHauq --exclude=.sync/ "$BASE/" "$SERVER:$REMOTE"
+            init_local_sandbox 0
+            init_remote_sandbox
+            rsh ln -s "../versions/0" "$REMOTE/.sync/clients/$CLIENT" 
             ;;
         "exists-ready" | "exists-exists")
-            echo merge, init client, maybe init server
+            if [ "$server_state" = "exists" ]; then
+                init_remote_sandbox
+            fi
+            rvnum=$(rsh ls "$REMOTE/.sync/versions" | sort -rn | head -1)
+            init_local_sandbox "$rvnum"
+
+            # Surprisingly, the exists-ready state seems to be,
+            # conceptually, the most trickiest.  If the remote is ready,
+            # then other clients depend on its integrity, which means that
+            # any changes to the server have to conform to how an update
+            # works.
+
+            # First, let's make sure that the lone local version matches
+            # the latest remote version.
+            rsync -OHaq --delete \
+                  "$SERVER:$REMOTE/.sync/versions/$rvnum" \
+                  "$BASE/.sync/versions"
+
+            # In theory, update should now work.
+            log "calling update to complete initial link"
+            update "$client"
             ;;
     esac
 }
