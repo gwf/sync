@@ -75,4 +75,10 @@ function main {
 
 ###############################################################################
 
-main
+#main
+
+cd $HOME
+rm -rf "$BASE"
+mkdir  "$BASE"
+make_data
+ 

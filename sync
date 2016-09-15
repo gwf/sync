@@ -415,6 +415,12 @@ function update {
         error "Home directory $HOME does not exist."
     fi
     cd "$HOME"
+    if [ -f "$BASE/.sync/config" ]; then 
+        source "$BASE/.sync/config"
+    else
+        error "$BASE is missing a config file."
+    fi
+        
     log "----------------------------------------"
     log "starting..."
 
@@ -462,6 +468,24 @@ function update {
 function status {
     # Inspect the local and remote machines to see if they are in a good
     # state.
+
+    LOCAL=$(realpath "$1")
+    HOME=$(dirname "$LOCAL")
+    BASE=$(basename "$LOCAL")
+
+    if [ -f "$HOME/$BASE/.sync/config" ]; then 
+        source "$HOME/$BASE/.sync/config"
+    else
+        # Split apart the SERVER:REMOTE argument and clean it up.
+        SERVER="${2%:*}"
+        REMOTE="${2#*:}"
+        if [ "$SERVER:$REMOTE" != "$2" ]; then
+            help "malformed SERVER:REMOTE arguments"
+        fi
+        REMOTE="${REMOTE%/}"
+    fi    
+    
+    sanity_checks
     
     rsh test -d "$REMOTE/.sync"
     local remote_stat=$?
@@ -534,11 +558,10 @@ function init_remote_sandbox {
     rsh mkdir -p "$REMOTE/.sync/versions"
     rsh mkdir -p "$REMOTE/.sync/clients"
     
-    rsh rsync -a --delete \
+    rsh rsync -aq --delete \
         --exclude=.sync \
         --link-dest=../../.. \
-        "$REMOTE/" "$REMOTE/.sync/versions/0" \
-        >> "$REMOTE/.sync/log"
+        "$REMOTE/" "$REMOTE/.sync/versions/0" 
     
     log "remote sync initialized"
 }
@@ -569,6 +592,7 @@ function parse_init_args {
         help "malformed SERVER:REMOTE arguments"
     fi
     REMOTE="${REMOTE%/}"
+
     log "client location: $LOCAL"
     log "server location: $SERVER:$REMOTE"    
 }
@@ -654,9 +678,16 @@ function init_link {
                   "$SERVER:$REMOTE/.sync/versions/$rvnum" \
                   "$BASE/.sync/versions"
 
+            # I actually have low confidence in this block.  I don't think
+            # that the hardlinks between the sandbox and last version will
+            # fulfull our required invariances.
+            
             # In theory, update should now work.
             log "calling update to complete initial link"
             update "$client"
+
+            # FIXME: this flow did not leave a client softlink on the
+            # server
             ;;
     esac
 }
@@ -686,8 +717,7 @@ function main {
             update "$2"
             ;;
         status)
-            sanity_checks
-            status
+            status "$2"
             ;;
         *)
             help "unexpected command-line arguments."
