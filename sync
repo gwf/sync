@@ -1,18 +1,12 @@
 #!/bin/sh
 
-LOCAL=/Users/gary/test
-CLIENT=$(hostname -s)
-SERVER=diskstation
-REMOTE=test
-
-
 #############################################################################
 
 function help {
     local prog=$(basename $0)
     prefix="error:"
-    for msg in "$@"; do
-        echo "$prefix $msg" 1>&2 
+    for line in "$@"; do
+        echo "$prefix $line" 1>&2 
         prefix=$(echo "$prefix" | tr -C ' \n' ' ')
     done
     if [ $# -gt 0 ]; then echo "" 1>&2; fi
@@ -28,8 +22,8 @@ function help {
 
 function error {
     prefix="error:"
-    for msg in "$@"; do
-        echo "$prefix" "$msg" 1>&2 
+    for line in "$@"; do
+        echo "$prefix" "$line" 1>&2 
         prefix="      "
     done
     exit 1
@@ -42,8 +36,16 @@ function log {
         return
     fi
     local prefix=$(date "+%Y/%m/%d %H:%M:%S [$$]")
-    for msg in "$@"; do
-        echo "$prefix $msg" >> "$BASE/.sync/log"
+    for line in "$@"; do
+        echo "$prefix $line" >> "$BASE/.sync/log"
+    done
+}
+
+#############################################################################
+
+function msg {
+    for line in "$@"; do
+        echo "$line"
     done
 }
 
@@ -58,6 +60,30 @@ function realpath {
     fi
 }
 
+
+#############################################################################
+
+# First argument is a relative or absolute path the the local sandbox
+
+function load_config {
+    LOCAL=$(realpath "$1")
+    HOME=$(dirname "$LOCAL")
+    BASE=$(basename "$LOCAL")
+    CLIENT=$(hostname -s)
+
+    if [ ! -d "$HOME" ]; then
+        error "Home directory $HOME does not exist."
+    fi
+
+    if [ -f "$LOCAL/.sync/config" ]; then 
+        source "$LOCAL/.sync/config"
+        if [ -z "$REMOTE" -o -z "$SERVER" ]; then
+            error "configuration file in $BASE is corrupt."
+        fi
+    else
+        error "$BASE is missing a config file."
+    fi    
+}
 
 #############################################################################
 
@@ -86,8 +112,7 @@ function network_checks {
 
 #############################################################################
 
-function sanity_checks {
-    
+function sanity_checks {    
     log "performing sanity checks"
     
     # Check that the base directory exists
@@ -145,6 +170,8 @@ function release_lock {
     fi
 }
 
+#############################################################################
+#############################################################################
 #############################################################################
 
 function list_ancestors {
@@ -408,19 +435,9 @@ function cleanup_local {
 #############################################################################
 
 function update {
-    LOCAL=$(realpath "$1")
-    HOME=$(dirname "$LOCAL")
-    BASE=$(basename "$LOCAL")
-    if [ ! -d "$HOME" ]; then
-        error "Home directory $HOME does not exist."
-    fi
+    load_config "$1"
     cd "$HOME"
-    if [ -f "$BASE/.sync/config" ]; then 
-        source "$BASE/.sync/config"
-    else
-        error "$BASE is missing a config file."
-    fi
-        
+
     log "----------------------------------------"
     log "starting..."
 
@@ -465,26 +482,10 @@ function update {
 #############################################################################
 #############################################################################
 
+# Inspect the local and remote machines to see if they are in a good state.
+
 function status {
-    # Inspect the local and remote machines to see if they are in a good
-    # state.
-
-    LOCAL=$(realpath "$1")
-    HOME=$(dirname "$LOCAL")
-    BASE=$(basename "$LOCAL")
-
-    if [ -f "$HOME/$BASE/.sync/config" ]; then 
-        source "$HOME/$BASE/.sync/config"
-    else
-        # Split apart the SERVER:REMOTE argument and clean it up.
-        SERVER="${2%:*}"
-        REMOTE="${2#*:}"
-        if [ "$SERVER:$REMOTE" != "$2" ]; then
-            help "malformed SERVER:REMOTE arguments"
-        fi
-        REMOTE="${REMOTE%/}"
-    fi    
-    
+    load_config "$1"
     sanity_checks
     
     rsh test -d "$REMOTE/.sync"
@@ -620,7 +621,7 @@ function probe_init_state {
 
 #############################################################################
 
-function init_link {
+function link {
     local client="$1"
     local server="$2"
     local rvnum=
@@ -667,16 +668,17 @@ function init_link {
             init_local_sandbox "$rvnum"
 
             # Surprisingly, the exists-ready state seems to be,
-            # conceptually, the most trickiest.  If the remote is ready,
-            # then other clients depend on its integrity, which means that
-            # any changes to the server have to conform to how an update
-            # works.
+            # conceptually, the trickiest.  If the remote is ready, then
+            # other clients depend on its integrity, which means that any
+            # changes to the server have to conform to how an update works.
 
             # First, let's make sure that the lone local version matches
             # the latest remote version.
-            rsync -OHaq --delete \
-                  "$SERVER:$REMOTE/.sync/versions/$rvnum" \
-                  "$BASE/.sync/versions"
+            mkdir -p "$BASE/.sync/versions/$rvnum"
+            rsync -OHaq \
+                  --link-dest=../../.. \
+                  "$SERVER:$REMOTE/.sync/versions/$rvnum/" \
+                  "$BASE/.sync/versions/$rvnum"
 
             # I actually have low confidence in this block.  I don't think
             # that the hardlinks between the sandbox and last version will
@@ -696,6 +698,31 @@ function init_link {
 #############################################################################
 #############################################################################
 
+function unlink {
+    load_config "$1"
+    cd "$HOME"    
+
+    msg "Removing link on server $SERVER."
+    ssh -q -oConnectTimeout=1  "$SERVER" <<- EOF
+	cd "$REMOTE/.sync"
+	rm -f "clients/$CLIENT"
+	used=\$(find clients -type l -exec readlink '{}' \; \
+            | xargs -n 1 basename)
+	filter='(^'\$(echo \$used | tr ' ' '|')'$)'
+	unused=\$(ls versions | egrep -v "\$filter" | sort -n)
+	cd versions
+	rm -rf \$unused
+	EOF
+    
+    msg "Removing link on client inside of $BASE."
+    /bin/rm -rf "$BASE/.sync"
+    msg "Done."
+}
+
+#############################################################################
+#############################################################################
+#############################################################################
+
 
 function main {
     if [ $# -eq 0 ]; then help; fi
@@ -708,8 +735,14 @@ function main {
             if [ $# -ne 3 ]; then
                 help "expected LOCAL, SERVER, and REMOTE to be specified."
             fi
-            init_link "$2" "$3"
+            link "$2" "$3"
             ;;        
+        unlink)
+            if [ $# -ne 2 ]; then
+                help "expected LOCAL to be specified."
+            fi
+            unlink "$2"
+            ;;
         update)
             if [ $# -ne 2 ]; then
                 help "expected LOCAL to be specified."
