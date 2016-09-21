@@ -409,11 +409,10 @@ function cleanup_remote {
     
     ssh -q -oConnectTimeout=1  "$SERVER" <<- EOF
 	cd "$REMOTE/.sync"
-	rm -f "clients/$CLIENT"
 	ln -s "../versions/$nvnum" "clients/$CLIENT"
 	used=\$(find clients -type l -exec readlink '{}' \; \
-            | xargs -n 1 basename)
-	filter='(^'\$(echo \$used | tr ' ' '|')'$)'
+            | xargs -r -n 1 basename)
+	filter='^('\$(echo \$used | tr ' ' '|')')$'
 	unused=\$(ls versions | egrep -v "\$filter" | sort -n)
 	cd versions
 	rm -rf \$unused
@@ -435,9 +434,6 @@ function cleanup_local {
 #############################################################################
 
 function update {
-    load_config "$1"
-    cd "$HOME"
-
     log "----------------------------------------"
     log "starting..."
 
@@ -632,6 +628,10 @@ function link {
     local client_state=${state%-*}
     local server_state=${state#*-}    
     cd "$HOME"
+
+    msg "Linking $HOME/$BASE to $SERVER:$REMOTE ..."
+    msg "\tClient state is: $client_state"
+    msg "\tServer state is: $server_state"
     
     case "$state" in
         "missing-missing")
@@ -686,36 +686,44 @@ function link {
             
             # In theory, update should now work.
             log "calling update to complete initial link"
-            update "$client"
+            update
 
             # FIXME: this flow did not leave a client softlink on the
             # server
             ;;
     esac
+    msg "Done."
 }
 
 #############################################################################
 #############################################################################
 #############################################################################
 
-function unlink {
-    load_config "$1"
-    cd "$HOME"    
+# Unlink currently preserves the most recent version even if there are no
+# more clients.  Rmove the "sort -rn | tail -n +2" in the unused
+# calculation to undo.  Using it in this form for debugging purposes.
 
-    msg "Removing link on server $SERVER."
+function unlink {
+    msg "Uninking $HOME/$BASE from $SERVER:$REMOTE ..."    
+    msg "\tRemoving link on server $SERVER..."
     ssh -q -oConnectTimeout=1  "$SERVER" <<- EOF
 	cd "$REMOTE/.sync"
 	rm -f "clients/$CLIENT"
 	used=\$(find clients -type l -exec readlink '{}' \; \
-            | xargs -n 1 basename)
-	filter='(^'\$(echo \$used | tr ' ' '|')'$)'
-	unused=\$(ls versions | egrep -v "\$filter" | sort -n)
+            | xargs -r -n 1 basename)
+	filter='^('\$(echo \$used | tr ' ' '|')')$'
+	unused=\$(ls versions | sort -rn | tail -n +2 | egrep -v "\$filter" )
 	cd versions
 	rm -rf \$unused
+	if [ \$(ls | wc -l) -eq 0 ]; then
+	    cd ../..
+	    rm -rf .sync
+	fi
 	EOF
     
-    msg "Removing link on client inside of $BASE."
+    msg "\tRemoving link on client inside of $BASE."
     /bin/rm -rf "$BASE/.sync"
+
     msg "Done."
 }
 
@@ -741,13 +749,17 @@ function main {
             if [ $# -ne 2 ]; then
                 help "expected LOCAL to be specified."
             fi
-            unlink "$2"
+            load_config "$2"
+            cd "$HOME"    
+            unlink
             ;;
         update)
             if [ $# -ne 2 ]; then
                 help "expected LOCAL to be specified."
             fi
-            update "$2"
+            load_config "$2"
+            cd "$HOME"
+            update
             ;;
         status)
             status "$2"
