@@ -1,6 +1,7 @@
 #!/bin/sh
 
 CLIENT=$(hostname -s)
+VERBOSE=1
 
 #############################################################################
 
@@ -40,6 +41,9 @@ function log {
     local prefix=$(date "+%Y/%m/%d %H:%M:%S [$$]")
     for line in "$@"; do
         echo "$prefix $line" >> "$BASE/.sync/log"
+        if [ "$VERBOSE" -eq 1 ]; then
+            echo "$prefix $line"
+        fi
     done
 }
 
@@ -411,6 +415,7 @@ function cleanup_remote {
     ssh -q -oConnectTimeout=1  "$SERVER" <<- EOF
 	cd "$REMOTE/.sync"
 	ln -s "../versions/$nvnum" "clients/$CLIENT"
+	echo ln -s "../versions/$nvnum" "clients/$CLIENT"
 	used=\$(find clients -type l -exec readlink '{}' \; \
             | xargs -r -n 1 basename)
 	filter='^('\$(echo \$used | tr ' ' '|')')$'
@@ -530,6 +535,7 @@ function init_local_sandbox {
     rm -rf "$BASE/.sync"
     mkdir -p "$BASE/.sync/versions"
     log "initializing local sandbox"
+    msg "\tinitializing local sandbox"
 
     # Add config file to store SERVER and REMOTE
     cat <<- EOF > "$BASE/.sync/config"
@@ -552,6 +558,7 @@ function init_local_sandbox {
 function init_remote_sandbox {
     # TODO: rework to be a single rsh
     log "initializing remote sandbox"
+    msg "\tinitializing remote sandbox"
     rsh rm -rf "$REMOTE/.sync"
     rsh mkdir -p "$REMOTE/.sync/versions"
     rsh mkdir -p "$REMOTE/.sync/clients"
@@ -654,15 +661,16 @@ function link {
             rvnum=$(rsh ls "$REMOTE/.sync/versions" | sort -rn | head -1)
             msg "\tpulling initial remote version from server"
             rsync -OHauq --exclude=.sync/ "$SERVER:$REMOTE/" "$BASE"
-            msg "\tinitializing local sandbox"
             init_local_sandbox "$rvnum"
             msg "\tfinalizing link"
             rsh ln -s "../versions/$rvnum" "$REMOTE/.sync/clients/$CLIENT" 
             ;;
         "exists-missing")
+            msg "\tpushing initial local version to server"
             rsync -OHauq --exclude=.sync/ "$BASE/" "$SERVER:$REMOTE"
             init_local_sandbox 0
             init_remote_sandbox
+            msg "\tfinalizing link"
             rsh ln -s "../versions/0" "$REMOTE/.sync/clients/$CLIENT" 
             ;;
         "exists-ready" | "exists-exists")
