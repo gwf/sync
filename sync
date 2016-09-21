@@ -1,5 +1,7 @@
 #!/bin/sh
 
+CLIENT=$(hostname -s)
+
 #############################################################################
 
 function help {
@@ -69,7 +71,6 @@ function load_config {
     LOCAL=$(realpath "$1")
     HOME=$(dirname "$LOCAL")
     BASE=$(basename "$LOCAL")
-    CLIENT=$(hostname -s)
 
     if [ ! -d "$HOME" ]; then
         error "Home directory $HOME does not exist."
@@ -630,8 +631,8 @@ function link {
     cd "$HOME"
 
     msg "Linking $HOME/$BASE to $SERVER:$REMOTE ..."
-    msg "\tClient state is: $client_state"
-    msg "\tServer state is: $server_state"
+    msg "\tclient state: $client_state"
+    msg "\tserver state: $server_state"
     
     case "$state" in
         "missing-missing")
@@ -647,11 +648,15 @@ function link {
             ;;
         "missing-exists" | "missing-ready")            
             if [ "$server_state" = "exists" ]; then
+                msg "\tinitalizing remote sandbox"
                 init_remote_sandbox
             fi
             rvnum=$(rsh ls "$REMOTE/.sync/versions" | sort -rn | head -1)
+            msg "\tpulling initial remote version from server"
             rsync -OHauq --exclude=.sync/ "$SERVER:$REMOTE/" "$BASE"
+            msg "\tinitializing local sandbox"
             init_local_sandbox "$rvnum"
+            msg "\tfinalizing link"
             rsh ln -s "../versions/$rvnum" "$REMOTE/.sync/clients/$CLIENT" 
             ;;
         "exists-missing")
@@ -705,7 +710,7 @@ function link {
 
 function unlink {
     msg "Uninking $HOME/$BASE from $SERVER:$REMOTE ..."    
-    msg "\tRemoving link on server $SERVER..."
+    msg "\tremoving link on server $SERVER"
     ssh -q -oConnectTimeout=1  "$SERVER" <<- EOF
 	cd "$REMOTE/.sync"
 	rm -f "clients/$CLIENT"
@@ -721,7 +726,7 @@ function unlink {
 	fi
 	EOF
     
-    msg "\tRemoving link on client inside of $BASE."
+    msg "\tremoving link on client inside of $BASE"
     /bin/rm -rf "$BASE/.sync"
 
     msg "Done."
