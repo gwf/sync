@@ -414,14 +414,14 @@ function cleanup_remote {
     
     ssh -q -oConnectTimeout=1  "$SERVER" <<- EOF
 	cd "$REMOTE/.sync"
+	/bin/rm "clients/$CLIENT"
 	ln -s "../versions/$nvnum" "clients/$CLIENT"
-	echo ln -s "../versions/$nvnum" "clients/$CLIENT"
 	used=\$(find clients -type l -exec readlink '{}' \; \
             | xargs -r -n 1 basename)
 	filter='^('\$(echo \$used | tr ' ' '|')')$'
 	unused=\$(ls versions | egrep -v "\$filter" | sort -n)
 	cd versions
-	rm -rf \$unused
+	/bin/rm -rf \$unused
 	EOF
 }
 
