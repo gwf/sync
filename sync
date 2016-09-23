@@ -692,7 +692,7 @@ function link {
                   --link-dest=../../.. \
                   "$SERVER:$REMOTE/.sync/versions/$rvnum/" \
                   "$BASE/.sync/versions/$rvnum"
-
+            find_local_updates $rvnum
             # I actually have low confidence in this block.  I don't think
             # that the hardlinks between the sandbox and last version will
             # fulfull our required invariances.
