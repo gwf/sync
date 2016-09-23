@@ -1,15 +1,15 @@
 #!/bin/sh
 
 CLIENT=$(hostname -s)
-VERBOSE=1
-
 NO_DELETES=0
 DO_DELETES=1
+VERBOSE=1
+
 
 #############################################################################
 
 function help {
-    local prog=$(basename $0)
+    local prog=$(basename "$0")
     prefix="error:"
     for line in "$@"; do
         echo "$prefix $line" 1>&2 
@@ -350,7 +350,7 @@ function apply_local_updates {
           --log-file="$BASE/.sync/log" \
           "$BASE/" \
           "$BASE/.sync/versions/$nvnum"
-
+    echo "if [  $deletes -eq $DO_DELETES ]; then ..."
     if [ "$deletes" -eq "$DO_DELETES" ]; then        
         log "applying local file deletions to $nvnum"    
         cat "$BASE/.sync/deletions" | (
@@ -446,7 +446,7 @@ function cleanup_local {
 #############################################################################
 
 function update {
-    local deletes=$0
+    local deletes=$1
 
     log "----------------------------------------"
     log "starting..."
