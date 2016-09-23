@@ -687,31 +687,19 @@ function link {
             fi
             rvnum=$(rsh ls "$REMOTE/.sync/versions" | sort -rn | head -1)
             init_local_sandbox "$rvnum"
-
-            # Surprisingly, the exists-ready state seems to be,
-            # conceptually, the trickiest.  If the remote is ready, then
-            # other clients depend on its integrity, which means that any
-            # changes to the server have to conform to how an update works.
-
             # First, let's make sure that the lone local version matches
             # the latest remote version.
             mkdir -p "$BASE/.sync/versions/$rvnum"
+            msg "\tmerging local and remote versions"
             rsync -viOHa --delete \
                   --link-dest=../../.. \
                   "$SERVER:$REMOTE/.sync/versions/$rvnum/" \
                   "$BASE/.sync/versions/$rvnum"
+
+            # By doing an update without deletes, we're forcing a merge
+            # between to the two systems
+            msg "\tcalling update to complete the link"
             update $NO_DELETES
-
-            # I actually have low confidence in this block.  I don't think
-            # that the hardlinks between the sandbox and last version will
-            # fulfull our required invariances.
-            
-            # In theory, update should now work.
-            #log "calling update to complete initial link"
-            #update
-
-            # FIXME: this flow did not leave a client softlink on the
-            # server
             ;;
     esac
     msg "Done."
