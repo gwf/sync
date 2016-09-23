@@ -350,7 +350,7 @@ function apply_local_updates {
           --log-file="$BASE/.sync/log" \
           "$BASE/" \
           "$BASE/.sync/versions/$nvnum"
-    echo "if [  $deletes -eq $DO_DELETES ]; then ..."
+
     if [ "$deletes" -eq "$DO_DELETES" ]; then        
         log "applying local file deletions to $nvnum"    
         cat "$BASE/.sync/deletions" | (
