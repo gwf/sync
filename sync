@@ -688,7 +688,7 @@ function link {
             # First, let's make sure that the lone local version matches
             # the latest remote version.
             mkdir -p "$BASE/.sync/versions/$rvnum"
-            rsync -vOHa --delete \
+            rsync -viOHa --delete \
                   --link-dest=../../.. \
                   "$SERVER:$REMOTE/.sync/versions/$rvnum/" \
                   "$BASE/.sync/versions/$rvnum"
