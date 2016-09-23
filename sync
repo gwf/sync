@@ -698,8 +698,8 @@ function link {
             # fulfull our required invariances.
             
             # In theory, update should now work.
-            log "calling update to complete initial link"
-            update
+            #log "calling update to complete initial link"
+            #update
 
             # FIXME: this flow did not leave a client softlink on the
             # server
