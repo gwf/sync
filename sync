@@ -3,6 +3,9 @@
 CLIENT=$(hostname -s)
 VERBOSE=1
 
+NO_DELETES=0
+DO_DELETES=1
+
 #############################################################################
 
 function help {
@@ -331,7 +334,8 @@ function apply_remote_updates {
 
 function apply_local_updates {
     local nvnum=$1
-
+    local deletes=$2
+    
     # Now that the next version has the last local and remote syncs
     # reconciled, we now need to apply the local sandbox updates to the next
     # version.
@@ -346,26 +350,28 @@ function apply_local_updates {
           --log-file="$BASE/.sync/log" \
           "$BASE/" \
           "$BASE/.sync/versions/$nvnum"
-    
-    log "applying local file deletions to $nvnum"    
-    cat "$BASE/.sync/deletions" | (
-        cd "$BASE/.sync/versions/$nvnum"
-        while read line; do
-            log "deleting ./$line"
-            /bin/rm -f "./$line"
-        done
-    )
 
-    log "applying local directory deletions to $nvnum"    
-    cat "$BASE/.sync/dirs" | (
-        cd "$BASE/.sync/versions/$nvnum"
-        while read dir; do
-            if [ $(find . -maxdepth 1 -print | wc -l) -gt 1 ]; then
-                log "deleting directory ./$dir"
-                /bin/rmdir ".$dir"
-            fi
-        done
-    )
+    if [ "$deletes" -eq "$DO_DELETES" ]; then        
+        log "applying local file deletions to $nvnum"    
+        cat "$BASE/.sync/deletions" | (
+            cd "$BASE/.sync/versions/$nvnum"
+            while read line; do
+                log "deleting ./$line"
+                /bin/rm -f "./$line"
+            done
+        )
+
+        log "applying local directory deletions to $nvnum"    
+        cat "$BASE/.sync/dirs" | (
+            cd "$BASE/.sync/versions/$nvnum"
+            while read dir; do
+                if [ $(find . -maxdepth 1 -print | wc -l) -gt 1 ]; then
+                    log "deleting directory ./$dir"
+                    /bin/rmdir ".$dir"
+                fi
+            done
+        )
+    fi
 }
 
 #############################################################################
@@ -440,6 +446,8 @@ function cleanup_local {
 #############################################################################
 
 function update {
+    local deletes=$0
+
     log "----------------------------------------"
     log "starting..."
 
@@ -467,7 +475,7 @@ function update {
             # Bump version number to account for local changes.
             nvnum=$(($rvnum + 1))    
             apply_remote_updates $lvnum $rvnum  $nvnum
-            apply_local_updates $nvnum
+            apply_local_updates $nvnum $deletes
             push_new_remote $rvnum $nvnum
         fi
         cleanup_remote $nvnum
@@ -692,7 +700,8 @@ function link {
                   --link-dest=../../.. \
                   "$SERVER:$REMOTE/.sync/versions/$rvnum/" \
                   "$BASE/.sync/versions/$rvnum"
-            find_local_updates $rvnum
+            update $NO_DELETES
+
             # I actually have low confidence in this block.  I don't think
             # that the hardlinks between the sandbox and last version will
             # fulfull our required invariances.
@@ -772,7 +781,7 @@ function main {
             fi
             load_config "$2"
             cd "$HOME"
-            update
+            update $DO_DELETES
             ;;
         status)
             status "$2"
