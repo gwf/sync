@@ -543,7 +543,6 @@ function init_local_sandbox {
     rm -rf "$BASE/.sync"
     mkdir -p "$BASE/.sync/versions"
     log "initializing local sandbox"
-    msg "\tinitializing local sandbox"
 
     # Add config file to store SERVER and REMOTE
     cat <<- EOF > "$BASE/.sync/config"
@@ -566,7 +565,6 @@ function init_local_sandbox {
 function init_remote_sandbox {
     # TODO: rework to be a single rsh
     log "initializing remote sandbox"
-    msg "\tinitializing remote sandbox"
     rsh rm -rf "$REMOTE/.sync"
     rsh mkdir -p "$REMOTE/.sync/versions"
     rsh mkdir -p "$REMOTE/.sync/clients"
@@ -645,7 +643,7 @@ function link {
     local server_state=${state#*-}    
     cd "$HOME"
 
-    msg "Linking $HOME/$BASE to $SERVER:$REMOTE ..."
+    msg "linking $HOME/$BASE to $SERVER:$REMOTE ..."
     msg "\tclient state: $client_state"
     msg "\tserver state: $server_state"
     
@@ -663,7 +661,6 @@ function link {
             ;;
         "missing-exists" | "missing-ready")            
             if [ "$server_state" = "exists" ]; then
-                msg "\tinitalizing remote sandbox"
                 init_remote_sandbox
             fi
             rvnum=$(rsh ls "$REMOTE/.sync/versions" | sort -rn | head -1)
@@ -702,7 +699,7 @@ function link {
             update $NO_DELETES
             ;;
     esac
-    msg "Done."
+    msg "done."
 }
 
 #############################################################################
@@ -714,7 +711,7 @@ function link {
 # calculation to undo.  Using it in this form for debugging purposes.
 
 function unlink {
-    msg "Uninking $HOME/$BASE from $SERVER:$REMOTE ..."    
+    msg "uninking $HOME/$BASE from $SERVER:$REMOTE ..."    
     msg "\tremoving link on server $SERVER"
     ssh -q -oConnectTimeout=1  "$SERVER" <<- EOF
 	cd "$REMOTE/.sync"
@@ -734,7 +731,7 @@ function unlink {
     msg "\tremoving link on client inside of $BASE"
     /bin/rm -rf "$BASE/.sync"
 
-    msg "Done."
+    msg "done."
 }
 
 #############################################################################
