@@ -5,8 +5,12 @@ NO_DELETES=0
 DO_DELETES=1
 VERBOSE=1
 
+# TODO: use a randomly generated GUID on initial link as the identifier for
+# this client, so that we can have multiple clients from the same user and
+# machine.
 
-#############################################################################
+
+###############################################################################
 
 function help {
     local prog=$(basename "$0")
@@ -24,7 +28,7 @@ function help {
     exit 0
 }
 
-#############################################################################
+###############################################################################
 
 function error {
     prefix="error:"
@@ -35,30 +39,21 @@ function error {
     exit 1
 }
 
-#############################################################################
+###############################################################################
 
 function log {
-    if [ ! -d "$BASE/.sync" ]; then
-        return
-    fi
     local prefix=$(date "+%Y/%m/%d %H:%M:%S [$$]")
     for line in "$@"; do
-        echo "$prefix $line" >> "$BASE/.sync/log"
+        if [ ! -d "$BASE/.sync" ]; then
+            echo "$prefix $line" >> "$BASE/.sync/log"
+        fi
         if [ "$VERBOSE" -eq 1 ]; then
             echo "$prefix $line"
         fi
     done
 }
 
-#############################################################################
-
-function msg {
-    for line in "$@"; do
-        echo "$line"
-    done
-}
-
-#############################################################################
+###############################################################################
 
 function realpath {
     local path="${1%/}"
@@ -70,7 +65,7 @@ function realpath {
 }
 
 
-#############################################################################
+###############################################################################
 
 # First argument is a relative or absolute path the the local sandbox
 
@@ -93,13 +88,13 @@ function load_config {
     fi    
 }
 
-#############################################################################
+###############################################################################
 
 function rsh {
     ssh -qn -oConnectTimeout=1 -oBatchMode=yes "$SERVER" $@
 }
 
-#############################################################################
+###############################################################################
 
 function network_checks {    
     log "performing networking checks"
@@ -118,7 +113,7 @@ function network_checks {
     fi
 }
 
-#############################################################################
+###############################################################################
 
 function sanity_checks {    
     log "performing sanity checks"
@@ -155,7 +150,7 @@ function sanity_checks {
     
 }
 
-#############################################################################
+###############################################################################
 
 function acquire_lock {
     log "acquiring lock"
@@ -166,7 +161,7 @@ function acquire_lock {
     fi
 }
 
-#############################################################################
+###############################################################################
 
 function release_lock {
     log "releasing lock"
@@ -178,9 +173,9 @@ function release_lock {
     fi
 }
 
-#############################################################################
-#############################################################################
-#############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
 
 function list_ancestors {
     while read path; do
@@ -193,7 +188,7 @@ function list_ancestors {
     done
 }
 
-#############################################################################
+###############################################################################
 
 function find_local_updates {
     log "finding local updates"
@@ -275,7 +270,7 @@ function find_local_updates {
     return $?
 }
 
-#############################################################################
+###############################################################################
 
 function pull_remote_version {
     local lvnum=$1
@@ -296,7 +291,7 @@ function pull_remote_version {
     fi    
 }
 
-#############################################################################
+###############################################################################
 
 function apply_remote_updates {
     local lvnum=$1
@@ -330,7 +325,7 @@ function apply_remote_updates {
           "$BASE/.sync/versions/$nvnum"
 }
 
-#############################################################################
+###############################################################################
 
 function apply_local_updates {
     local nvnum=$1
@@ -374,7 +369,7 @@ function apply_local_updates {
     fi
 }
 
-#############################################################################
+###############################################################################
 
 function update_local_sandbox {
     local nvnum=$1
@@ -387,7 +382,7 @@ function update_local_sandbox {
           >> "$BASE/.sync/log"
 }
 
-#############################################################################
+###############################################################################
 
 function push_new_remote {
     local rvnum=$1
@@ -408,7 +403,7 @@ function push_new_remote {
         >> "$BASE/.sync/log"
 }
 
-#############################################################################
+###############################################################################
 
 function cleanup_remote {
     local nvnum=$1
@@ -431,7 +426,7 @@ function cleanup_remote {
 	EOF
 }
 
-#############################################################################
+###############################################################################
 
 function cleanup_local {
     local nvnum=$1
@@ -443,7 +438,7 @@ function cleanup_local {
          | xargs rm -rf
 }
 
-#############################################################################
+###############################################################################
 
 function update {
     local deletes=$1
@@ -488,9 +483,9 @@ function update {
     log "done."    
 }
 
-#############################################################################
-#############################################################################
-#############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
 
 # Inspect the local and remote machines to see if they are in a good state.
 
@@ -532,9 +527,9 @@ function status {
     echo Pull would update $pull_add files and delete $pull_del files.
 }
 
-#############################################################################
-#############################################################################
-#############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
 
 function init_local_sandbox {
     local lvnum=$1
@@ -560,7 +555,7 @@ function init_local_sandbox {
     log "local sync initialized"
 }
 
-#############################################################################
+###############################################################################
 
 function init_remote_sandbox {
     # TODO: rework to be a single rsh
@@ -577,7 +572,7 @@ function init_remote_sandbox {
     log "remote sync initialized"
 }
 
-#############################################################################
+###############################################################################
 
 function parse_init_args {
     # Warning: this is one big side effect on globals.
@@ -608,7 +603,7 @@ function parse_init_args {
     log "server location: $SERVER:$REMOTE"    
 }
 
-#############################################################################
+###############################################################################
 
 function probe_init_state {
     # Probe  local and remote to find the state of each:
@@ -629,7 +624,7 @@ function probe_init_state {
     echo "$local_state-$remote_state"    
 }
 
-#############################################################################
+###############################################################################
 
 function link {
     local client="$1"
@@ -643,9 +638,9 @@ function link {
     local server_state=${state#*-}    
     cd "$HOME"
 
-    msg "linking $HOME/$BASE to $SERVER:$REMOTE ..."
-    msg "\tclient state: $client_state"
-    msg "\tserver state: $server_state"
+    log "linking $HOME/$BASE to $SERVER:$REMOTE ..."
+    log "client state: $client_state"
+    log "server state: $server_state"
     
     case "$state" in
         "missing-missing")
@@ -664,18 +659,20 @@ function link {
                 init_remote_sandbox
             fi
             rvnum=$(rsh ls "$REMOTE/.sync/versions" | sort -rn | head -1)
-            msg "\tpulling initial remote version from server"
+            log "pulling initial remote version from server"
+            # TODO: tty logging
             rsync -OHauq --exclude=.sync/ "$SERVER:$REMOTE/" "$BASE"
             init_local_sandbox "$rvnum"
-            msg "\tfinalizing link"
+            log "finalizing link"
             rsh ln -s "../versions/$rvnum" "$REMOTE/.sync/clients/$CLIENT" 
             ;;
         "exists-missing")
-            msg "\tpushing initial local version to server"
+            log "pushing initial local version to server"
+            # TODO: tty logging
             rsync -OHauq --exclude=.sync/ "$BASE/" "$SERVER:$REMOTE"
             init_local_sandbox 0
             init_remote_sandbox
-            msg "\tfinalizing link"
+            log "finalizing link"
             rsh ln -s "../versions/0" "$REMOTE/.sync/clients/$CLIENT" 
             ;;
         "exists-ready" | "exists-exists")
@@ -687,7 +684,8 @@ function link {
             # First, let's make sure that the lone local version matches
             # the latest remote version.
             mkdir -p "$BASE/.sync/versions/$rvnum"
-            msg "\tmerging local and remote versions"
+            log "merging local and remote versions"
+            # TODO: tty logging
             rsync -viOHa --delete \
                   --link-dest=../../.. \
                   "$SERVER:$REMOTE/.sync/versions/$rvnum/" \
@@ -695,24 +693,24 @@ function link {
 
             # By doing an update without deletes, we're forcing a merge
             # between to the two systems
-            msg "\tcalling update to complete the link"
+            log "calling update to complete the link..."
             update $NO_DELETES
             ;;
     esac
-    msg "done."
+    log "done."
 }
 
-#############################################################################
-#############################################################################
-#############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
 
 # Unlink currently preserves the most recent version even if there are no
 # more clients.  Rmove the "sort -rn | tail -n +2" in the unused
 # calculation to undo.  Using it in this form for debugging purposes.
 
 function unlink {
-    msg "uninking $HOME/$BASE from $SERVER:$REMOTE ..."    
-    msg "\tremoving link on server $SERVER"
+    log "uninking $HOME/$BASE from $SERVER:$REMOTE ..."    
+    log "removing link on server $SERVER"
     ssh -q -oConnectTimeout=1  "$SERVER" <<- EOF
 	cd "$REMOTE/.sync"
 	rm -f "clients/$CLIENT"
@@ -728,15 +726,15 @@ function unlink {
 	fi
 	EOF
     
-    msg "\tremoving link on client inside of $BASE"
+    log "removing link on client inside of $BASE"
     /bin/rm -rf "$BASE/.sync"
 
-    msg "done."
+    log "done."
 }
 
-#############################################################################
-#############################################################################
-#############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
 
 
 function main {
@@ -777,7 +775,7 @@ function main {
     esac
 }
 
-#############################################################################
+###############################################################################
 
 main $*
 
