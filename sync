@@ -14,7 +14,8 @@ VERBOSE=1
 
 function help {
     local prog=$(basename "$0")
-    prefix="error:"
+    local prefix="error:"
+    local line=
     for line in "$@"; do
         echo "$prefix $line" 1>&2 
         prefix=$(echo "$prefix" | tr -C ' \n' ' ')
@@ -31,7 +32,8 @@ function help {
 ###############################################################################
 
 function error {
-    prefix="error:"
+    local prefix="error:"
+    local line=
     for line in "$@"; do
         echo "$prefix" "$line" 1>&2 
         prefix="      "
@@ -43,8 +45,9 @@ function error {
 
 function log {
     local prefix=$(date "+%Y/%m/%d %H:%M:%S [$$]")
+    local line=
     for line in "$@"; do
-        if [ ! -d "$BASE/.sync" ]; then
+        if [ -d "$BASE/.sync" ]; then
             echo "$prefix $line" >> "$BASE/.sync/log"
         fi
         if [ "$VERBOSE" -eq 1 ]; then
@@ -330,6 +333,8 @@ function apply_remote_updates {
 function apply_local_updates {
     local nvnum=$1
     local deletes=$2
+    local line=
+    local dir=
     
     # Now that the next version has the last local and remote syncs
     # reconciled, we now need to apply the local sandbox updates to the next
@@ -350,9 +355,9 @@ function apply_local_updates {
         log "applying local file deletions to $nvnum"    
         cat "$BASE/.sync/deletions" | (
             cd "$BASE/.sync/versions/$nvnum"
-            while read line; do
-                log "deleting ./$line"
-                /bin/rm -f "./$line"
+            while read line; do                
+                log "deleting .$line"
+                /bin/rm -f ."$line"                
             done
         )
 
@@ -361,8 +366,8 @@ function apply_local_updates {
             cd "$BASE/.sync/versions/$nvnum"
             while read dir; do
                 if [ $(find . -maxdepth 1 -print | wc -l) -gt 1 ]; then
-                    log "deleting directory ./$dir"
-                    /bin/rmdir ".$dir"
+                    log "deleting directory .$dir"
+                    /bin/rmdir ."$dir"
                 fi
             done
         )
