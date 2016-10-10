@@ -8,9 +8,14 @@ NO_DELETES=0
 DO_DELETES=1
 VERBOSE=1
 
-# TODO: use a randomly generated GUID on initial link as the identifier for
-# this client, so that we can have multiple clients from the same user and
-# machine.
+# TODO:
+
+# Use a randomly generated GUID on initial link as the identifier for this
+# client, so that we can have multiple clients from the same user and machine.
+
+# Eliminate all .DS_Store files from local sandbox as an initial step.
+
+# Make wrapper that checks version and updates if necessary.
 
 
 ###############################################################################
