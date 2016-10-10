@@ -1,5 +1,8 @@
 #!/bin/sh
 
+VERSION=0.0.1
+SOURCE="https://raw.githubusercontent.comsdfdsfsdf/gwf/sync/master/sync"
+
 CLIENT=$(hostname -s)
 NO_DELETES=0
 DO_DELETES=1
@@ -740,7 +743,6 @@ function unlink {
 ###############################################################################
 ###############################################################################
 ###############################################################################
-
 
 function main {
     if [ $# -eq 0 ]; then help; fi
