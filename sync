@@ -1,7 +1,7 @@
 #!/bin/sh
 
 VERSION=0.0.1
-SOURCE="https://raw.githubusercontent.comsdfdsfsdf/gwf/sync/master/sync"
+SOURCE="https://raw.githubusercontent.com/gwf/sync/master/sync"
 
 CLIENT=$(hostname -s)
 NO_DELETES=0
@@ -10,12 +10,14 @@ VERBOSE=1
 
 # TODO:
 
-# Use a randomly generated GUID on initial link as the identifier for this
-# client, so that we can have multiple clients from the same user and machine.
+# use a randomly generated GUID on initial link as the identifier for this
+# client, so that we can have multiple clients from the same user and 
+# machine.
 
 # Eliminate all .DS_Store files from local sandbox as an initial step.
-
+ 
 # Make wrapper that checks version and updates if necessary.
+
 
 
 ###############################################################################
@@ -749,7 +751,71 @@ function unlink {
 ###############################################################################
 ###############################################################################
 
+function update_self {
+
+    log "checking for new version"
+
+    local tmp=/tmp/$(basename "$0").tmp
+    local srcver=
+    
+    if ! curl -fs "$SOURCE" > "$tmp"; then
+        log "error downloading source." \
+            "continuing with the current version."
+        return
+    fi
+    
+    srcver=$(grep '^VERSION=' $tmp | head -1 | sed 's/^VERSION=//g')
+    if [ "$srcver" = "$VERSION" ]; then
+        log "installed version is latest"
+        return
+    fi
+
+
+    echo $srcver
+    exit
+    
+    if ! wget --quiet --output-document="$0.tmp" $UPDATE_BASE/$SELF ; then
+    echo "Failed: Error while trying to wget new version!"
+    echo "File requested: $UPDATE_BASE/$SELF"
+    exit 1
+  fi
+  echo "Done."
+
+  # Copy over modes from old version
+  OCTAL_MODE=$(stat -c '%a' $SELF)
+  if ! chmod $OCTAL_MODE "$0.tmp" ; then
+    echo "Failed: Error while trying to set mode on $0.tmp."
+    exit 1
+  fi
+
+  # Spawn update script
+  cat > updateScript.sh << EOF
+#!/bin/bash
+# Overwrite old file with new
+if mv "$0.tmp" "$0"; then
+  echo "Done. Update complete."
+  rm \$0
+else
+  echo "Failed!"
+fi
+EOF
+
+  echo -n "Inserting update process..."
+  exec /bin/bash updateScript.sh
+    
+
+    exit 0
+}
+
+
+###############################################################################
+###############################################################################
+###############################################################################
+
 function main {
+    update_self "$0"
+    exit
+    
     if [ $# -eq 0 ]; then help; fi
 
     case $1 in
