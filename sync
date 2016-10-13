@@ -1,6 +1,6 @@
 #!/bin/sh
 
-VERSION=0.0.1
+VERSION=0.0.0
 SOURCE="https://raw.githubusercontent.com/gwf/sync/master/sync"
 
 CLIENT=$(hostname -s)
@@ -751,12 +751,11 @@ function unlink {
 ###############################################################################
 ###############################################################################
 
-function update_self {
-
+function selfupdate {
+    local self="$0"
+    local tmp=/tmp/$(basename "$self").$$.tmp
+    local version=
     log "checking for new version"
-
-    local tmp=/tmp/$(basename "$0").tmp
-    local srcver=
     
     if ! curl -fs "$SOURCE" > "$tmp"; then
         log "error downloading source." \
@@ -764,46 +763,33 @@ function update_self {
         return
     fi
     
-    srcver=$(grep '^VERSION=' $tmp | head -1 | sed 's/^VERSION=//g')
-    if [ "$srcver" = "$VERSION" ]; then
+    version=$(grep '^VERSION=' $tmp | head -1 | sed 's/^VERSION=//g')
+    if [ "$version" = "$VERSION" ]; then
         log "installed version is latest"
         return
     fi
 
+    log "updating from version $VERSION to $version"
+    # Copy over modes from old version
+    local mode=$(stat -f '%Mp%Lp' "$self")
+  
+    if ! chmod "$mode" "$tmp" ; then
+        error "could not set mode of $tmp"
+    fi
 
-    echo $srcver
-    exit
-    
-    if ! wget --quiet --output-document="$0.tmp" $UPDATE_BASE/$SELF ; then
-    echo "Failed: Error while trying to wget new version!"
-    echo "File requested: $UPDATE_BASE/$SELF"
-    exit 1
-  fi
-  echo "Done."
+    # Create update script and spawn it
+    cat > /tmp/update.$$.sh <<- EOF
+	#!/bin/bash
+	if mv "$tmp" "$self"; then
+	    #rm "/tmp/update.$$.sh"
+	    exec "$self" "$@"
+	else
+	    echo "Failed to update self"
+	fi
+	EOF
 
-  # Copy over modes from old version
-  OCTAL_MODE=$(stat -c '%a' $SELF)
-  if ! chmod $OCTAL_MODE "$0.tmp" ; then
-    echo "Failed: Error while trying to set mode on $0.tmp."
-    exit 1
-  fi
-
-  # Spawn update script
-  cat > updateScript.sh << EOF
-#!/bin/bash
-# Overwrite old file with new
-if mv "$0.tmp" "$0"; then
-  echo "Done. Update complete."
-  rm \$0
-else
-  echo "Failed!"
-fi
-EOF
-
-  echo -n "Inserting update process..."
-  exec /bin/bash updateScript.sh
-    
-
+    log "forking update process..."
+    exec /bin/bash /tmp/update.$$.sh
     exit 0
 }
 
@@ -813,7 +799,7 @@ EOF
 ###############################################################################
 
 function main {
-    update_self "$0"
+    selfupdate "$0"
     exit
     
     if [ $# -eq 0 ]; then help; fi
