@@ -753,7 +753,7 @@ function unlink {
 
 function selfupdate {
     local self="$0"
-    local tmp=/tmp/$(basename "$self").$$.tmp
+    local tmp=/tmp/$(basename "$self").tmp
     local version=
     log "checking for new version"
     
