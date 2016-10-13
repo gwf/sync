@@ -1,6 +1,6 @@
 #!/bin/sh
 
-VERSION=0.0.0
+VERSION=0.0.1
 SOURCE="https://raw.githubusercontent.com/gwf/sync/master/sync"
 
 CLIENT=$(hostname -s)
@@ -800,7 +800,6 @@ function selfupdate {
 
 function main {
     selfupdate "$0"
-    exit
     
     if [ $# -eq 0 ]; then help; fi
 
