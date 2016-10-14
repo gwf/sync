@@ -1,6 +1,6 @@
 #!/bin/sh
 
-VERSION=0.0.2
+VERSION=0.0.3
 SOURCE="https://raw.githubusercontent.com/gwf/sync/master/sync"
 
 CLIENT=$(hostname -s)
@@ -756,6 +756,8 @@ function selfupdate {
     local tmp=/tmp/$(basename "$self").sh
     local update=/tmp/$(basename "$self").update.sh
     local version=
+
+
     log "checking for new version"
     
     if ! curl -fs "$SOURCE" > "$tmp"; then
