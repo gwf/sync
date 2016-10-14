@@ -753,7 +753,8 @@ function unlink {
 
 function selfupdate {
     local self="$0"
-    local tmp=/tmp/$(basename "$self").tmp
+    local tmp=/tmp/$(basename "$self").sh
+    local update=/tmp/$(basename "$self").update.sh
     local version=
     log "checking for new version"
     
@@ -779,10 +780,10 @@ function selfupdate {
     fi
 
     # Create update script and spawn it
-    cat > /tmp/update.$$.sh <<- EOF
+    cat > "$update" <<- EOF
 	#!/bin/bash
 	if mv "$tmp" "$self"; then
-	    #rm "/tmp/update.$$.sh"
+	    #rm "$update"
 	    exec "$@
 	else
 	    echo "Failed to update self"
@@ -791,7 +792,7 @@ function selfupdate {
 
     log "forking update process..." \
         "----------------------------------------"
-    exec /bin/bash /tmp/update.$$.sh
+    exec /bin/bash "$update"
     exit 0
 }
 
