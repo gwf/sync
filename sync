@@ -766,6 +766,7 @@ function selfupdate {
     version=$(grep '^VERSION=' $tmp | head -1 | sed 's/^VERSION=//g')
     if [ "$version" = "$VERSION" ]; then
         log "installed version is latest"
+        #/bin/rm "$tmp"
         return
     fi
 
@@ -782,13 +783,14 @@ function selfupdate {
 	#!/bin/bash
 	if mv "$tmp" "$self"; then
 	    #rm "/tmp/update.$$.sh"
-	    exec "$self" "$@"
+	    exec "$@
 	else
 	    echo "Failed to update self"
 	fi
 	EOF
 
-    log "forking update process..."
+    log "forking update process..." \
+        "----------------------------------------"
     exec /bin/bash /tmp/update.$$.sh
     exit 0
 }
@@ -799,7 +801,7 @@ function selfupdate {
 ###############################################################################
 
 function main {
-    selfupdate "$0"
+    selfupdate "$@"
     
     if [ $# -eq 0 ]; then help; fi
 
