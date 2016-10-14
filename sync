@@ -1,6 +1,6 @@
 #!/bin/sh
 
-VERSION=0.0.7
+VERSION=0.0.8
 SOURCE="https://raw.githubusercontent.com/gwf/sync/master/sync"
 
 CLIENT=$(hostname -s)
@@ -390,7 +390,7 @@ function update_local_sandbox {
     local nvnum=$1
     
     log "updating local sandbox via version $nvnum"
-    rsync -av --delete \
+    rsync -avv --delete \
           --exclude=.sync \
           --link-dest=".sync/versions/$nvnum" \
           "$BASE/.sync/versions/$nvnum/" "$BASE" \
